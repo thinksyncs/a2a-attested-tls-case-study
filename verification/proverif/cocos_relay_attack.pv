@@ -44,7 +44,10 @@ let GenuineService =
   (* Models the CVE assumption that the ephemeral TLS private key can be
      extracted after attestation was generated. *)
   event EphemeralKeyLeaked(pkE);
-  out(net, skE).
+  out(net, skE);
+  in(net, challenge_payload(chan_id_from_client, challenge: bitstring));
+  event ServerBindsSameChannel(chan_id_from_client, service, pkE);
+  out(net, sign(challenge_payload(chan_id_from_client, challenge), skE)).
 
 let Client =
   new chan_id: bitstring;

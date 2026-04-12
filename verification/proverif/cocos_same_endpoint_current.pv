@@ -39,9 +39,11 @@ let GenuineService =
   let pkE = pk(skE) in
   event ServerIssuesAttestation(service, pkE, req_ctx);
   out(net, authenticator(sign(attest_payload(service, pkE, req_ctx), skA)));
-  event ServerControlsLiveEndpoint(service, chan_id_from_client, pkE);
   (* Explicit leakage assumption used to study same-endpoint failure. *)
-  out(net, skE).
+  out(net, skE);
+  in(net, challenge_payload(chan_id_from_client, challenge: bitstring));
+  event ServerControlsLiveEndpoint(service, chan_id_from_client, pkE);
+  out(net, sign(challenge_payload(chan_id_from_client, challenge), skE)).
 
 let Client =
   new chan_id: bitstring;
