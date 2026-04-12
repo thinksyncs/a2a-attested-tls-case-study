@@ -1,0 +1,66 @@
+(* Minimal ProVerif model for the legacy pre-handshake Cocos AI aTLS design.
+
+   Goal:
+   - Check whether client acceptance implies a prior evidence request and a
+     server-issued report over the client nonce and the server leaf key.
+
+   Scope:
+   - The client sends an evidence request carrying a fresh nonce.
+   - The server returns a signed report over (service identity, leaf public
+     key, nonce).
+   - The client accepts only if the signed report matches that same nonce.
+
+   This model is intentionally compact. It is a comparison point for the
+   legacy generation, not a full legacy proof.
+*)
+
+type skey.
+type pkey.
+
+free net: channel.
+free service: bitstring.
+free skA: skey [private].
+
+fun pk(skey): pkey.
+fun evidence_request(bitstring): bitstring [data].
+fun legacy_report(bitstring, pkey, bitstring): bitstring [data].
+fun certificate_frame(bitstring): bitstring [data].
+fun sign(bitstring, skey): bitstring.
+reduc forall m: bitstring, k: skey; checksign(sign(m, k), pk(k)) = m.
+
+event ClientRequestsEvidence(bitstring).
+event ServerCreatesLegacyReport(bitstring, pkey, bitstring).
+event ServerIssuesLegacyAttestation(bitstring, pkey, bitstring).
+event ClientAcceptsLegacy(bitstring, pkey, bitstring).
+
+let LegacyServer =
+  new skLeaf: skey;
+  in(net, evidence_request(nonce: bitstring));
+  let pkLeaf = pk(skLeaf) in
+  event ServerCreatesLegacyReport(service, pkLeaf, nonce);
+  event ServerIssuesLegacyAttestation(service, pkLeaf, nonce);
+  out(net, certificate_frame(sign(legacy_report(service, pkLeaf, nonce), skA))).
+
+let LegacyClient =
+  new nonce: bitstring;
+  event ClientRequestsEvidence(nonce);
+  out(net, evidence_request(nonce));
+  in(net, cert: bitstring);
+  let certificate_frame(rep: bitstring) = cert in
+  let legacy_report(=service, pkLeaf: pkey, =nonce) = checksign(rep, pk(skA)) in
+  event ClientAcceptsLegacy(service, pkLeaf, nonce).
+
+query pkLeaf_q: pkey, nonce_q: bitstring;
+  event(ClientAcceptsLegacy(service, pkLeaf_q, nonce_q))
+  ==> event(ClientRequestsEvidence(nonce_q)).
+
+query pkLeaf_q: pkey, nonce_q: bitstring;
+  event(ClientAcceptsLegacy(service, pkLeaf_q, nonce_q))
+  ==> event(ServerIssuesLegacyAttestation(service, pkLeaf_q, nonce_q)).
+
+query pkLeaf_q: pkey, nonce_q: bitstring;
+  event(ClientAcceptsLegacy(service, pkLeaf_q, nonce_q))
+  ==> event(ServerCreatesLegacyReport(service, pkLeaf_q, nonce_q)).
+
+process
+  (!LegacyServer) | (!LegacyClient)

@@ -1,0 +1,78 @@
+(* Minimal ProVerif model for exporter-label handling in the current
+   post-handshake Cocos AI aTLS verifier.
+
+   Goal:
+   - Check whether client acceptance implies use of the canonical attestation
+     exporter label.
+
+   Scope:
+   - The attestation authority signs a payload containing the service
+     identity, ephemeral public key, request context, and exporter label.
+   - The binder is verified against the exporter label carried inside the
+     signed payload.
+   - The verifier therefore accepts either the canonical label or an
+     alternate peer-chosen label if the binder matches that label.
+*)
+
+type skey.
+type pkey.
+
+free net: channel.
+free service: bitstring.
+free skA: skey [private].
+free canonical_label: bitstring.
+free alternate_label: bitstring.
+
+fun pk(skey): pkey.
+fun ea_request(bitstring): bitstring [data].
+fun att_payload(bitstring, pkey, bitstring, bitstring): bitstring [data].
+fun binder_value(bitstring, bitstring, pkey): bitstring [data].
+fun authenticator(bitstring, bitstring): bitstring [data].
+fun sign(bitstring, skey): bitstring.
+reduc forall m: bitstring, k: skey; checksign(sign(m, k), pk(k)) = m.
+
+event ServerIssuesAttestation(bitstring, pkey, bitstring, bitstring).
+event ServerUsesCanonicalLabel(bitstring, pkey, bitstring).
+event ClientAccepts(bitstring, pkey, bitstring, bitstring).
+
+let CanonicalLabelServer =
+  new skE: skey;
+  in(net, ea_request(req_ctx: bitstring));
+  let pkE = pk(skE) in
+  event ServerIssuesAttestation(service, pkE, req_ctx, canonical_label);
+  event ServerUsesCanonicalLabel(service, pkE, req_ctx);
+  out(net,
+      authenticator(
+        sign(att_payload(service, pkE, req_ctx, canonical_label), skA),
+        sign(binder_value(canonical_label, req_ctx, pkE), skE))).
+
+let AlternateLabelServer =
+  new skE: skey;
+  in(net, ea_request(req_ctx: bitstring));
+  let pkE = pk(skE) in
+  event ServerIssuesAttestation(service, pkE, req_ctx, alternate_label);
+  out(net,
+      authenticator(
+        sign(att_payload(service, pkE, req_ctx, alternate_label), skA),
+        sign(binder_value(alternate_label, req_ctx, pkE), skE))).
+
+let Client =
+  new req_ctx: bitstring;
+  out(net, ea_request(req_ctx));
+  in(net, auth: bitstring);
+  let authenticator(att, binder) = auth in
+  let att_payload(=service, pkE: pkey, =req_ctx, payload_label: bitstring) =
+    checksign(att, pk(skA)) in
+  if checksign(binder, pkE) = binder_value(payload_label, req_ctx, pkE) then
+    event ClientAccepts(service, pkE, req_ctx, payload_label).
+
+query pkE_q: pkey, ctx_q: bitstring, lbl_q: bitstring;
+  event(ClientAccepts(service, pkE_q, ctx_q, lbl_q))
+  ==> event(ServerIssuesAttestation(service, pkE_q, ctx_q, lbl_q)).
+
+query pkE_q: pkey, ctx_q: bitstring, lbl_q: bitstring;
+  event(ClientAccepts(service, pkE_q, ctx_q, lbl_q))
+  ==> event(ServerUsesCanonicalLabel(service, pkE_q, ctx_q)).
+
+process
+  (!CanonicalLabelServer) | (!AlternateLabelServer) | (!Client)

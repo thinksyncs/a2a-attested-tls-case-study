@@ -1,0 +1,59 @@
+(* Minimal ProVerif model for leaf-key substitution resistance in the current
+   post-handshake Cocos AI aTLS design.
+
+   Goal:
+   - Check whether client acceptance implies that the attested leaf public key
+     is the same key used to verify the live authenticator proof.
+
+   Scope:
+   - The attestation authority signs a payload containing the service
+     identity, leaf public key, and request context.
+   - The authenticator also carries a live proof signed by the corresponding
+     leaf private key.
+   - The client accepts only if both the attestation payload and the live
+     proof agree on the same leaf public key.
+*)
+
+type skey.
+type pkey.
+
+free net: channel.
+free service: bitstring.
+free skA: skey [private].
+
+fun pk(skey): pkey.
+fun ea_request(bitstring): bitstring [data].
+fun att_payload(bitstring, pkey, bitstring): bitstring [data].
+fun live_proof(bitstring, pkey): bitstring [data].
+fun authenticator(bitstring, bitstring): bitstring [data].
+fun sign(bitstring, skey): bitstring.
+reduc forall m: bitstring, k: skey; checksign(sign(m, k), pk(k)) = m.
+
+event ServerAttestsLeafKey(bitstring, pkey, bitstring).
+event ClientAccepts(bitstring, pkey, bitstring).
+
+let GenuineServer =
+  new skLeaf: skey;
+  in(net, ea_request(req_ctx: bitstring));
+  let pkLeaf = pk(skLeaf) in
+  event ServerAttestsLeafKey(service, pkLeaf, req_ctx);
+  out(net,
+      authenticator(
+        sign(att_payload(service, pkLeaf, req_ctx), skA),
+        sign(live_proof(req_ctx, pkLeaf), skLeaf))).
+
+let Client =
+  new req_ctx: bitstring;
+  out(net, ea_request(req_ctx));
+  in(net, auth: bitstring);
+  let authenticator(att: bitstring, live: bitstring) = auth in
+  let att_payload(=service, pkLeaf: pkey, =req_ctx) = checksign(att, pk(skA)) in
+  if checksign(live, pkLeaf) = live_proof(req_ctx, pkLeaf) then
+    event ClientAccepts(service, pkLeaf, req_ctx).
+
+query pkLeaf_q: pkey, ctx_q: bitstring;
+  event(ClientAccepts(service, pkLeaf_q, ctx_q))
+  ==> event(ServerAttestsLeafKey(service, pkLeaf_q, ctx_q)).
+
+process
+  (!GenuineServer) | (!Client)

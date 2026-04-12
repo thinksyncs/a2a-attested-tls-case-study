@@ -1,0 +1,8 @@
+.DS_Store
+
+reports/*.aux
+reports/*.log
+reports/*.out
+reports/*.toc
+reports/*.lof
+reports/*.lot

@@ -1,0 +1,72 @@
+theory Cocos_Legacy_Attestation
+begin
+
+builtins: hashing
+
+functions:
+  amd_tee/0,
+  no_tee/0,
+  pk/1,
+  report/1 [private]
+
+rule Register_Server:
+  [ Fr(~ltkS) ]
+  -->
+  [ !SrvPk($S, pk(~ltkS)) ]
+
+rule ClientHello_Request:
+  [ Fr(~nonce) ]
+  --[ ClientRequestsEvidence($C, $S, ~nonce, amd_tee) ]->
+  [ St_C($C, $S, ~nonce),
+    Out(<$C, $S, ~nonce, amd_tee>) ]
+
+rule Server_EncryptedExtensions_NoTEE:
+  [ In(<$C, $S, nonce, amd_tee>) ]
+  --[ ServerSelectsNoTEE($S, $C, nonce) ]->
+  [ Out(<$S, $C, nonce, no_tee>) ]
+
+rule Server_EncryptedExtensions_AMDTEE:
+  [ !SrvPk($S, pkS),
+    In(<$C, $S, nonce, amd_tee>) ]
+  --[ ServerSelectsTEE($S, $C, nonce, amd_tee, pkS) ]->
+  [ St_S($S, $C, nonce, pkS),
+    Out(<$S, $C, nonce, amd_tee>) ]
+
+rule Server_Certificate_Attestation:
+  [ St_S($S, $C, nonce, pkS) ]
+  --[ ServerCreatesLegacyReport($S, $C, nonce, pkS) ]->
+  [ Out(<$S, $C, nonce, report(h(<nonce, pkS>))>) ]
+
+rule Client_Rejects_NoTEE:
+  [ St_C($C, $S, nonce),
+    In(<$S, $C, nonce, no_tee>) ]
+  --[ ClientRejectsNoTEE($C, $S, nonce) ]->
+  [ ]
+
+rule Client_Verify_Legacy_Attestation:
+  [ St_C($C, $S, nonce),
+    !SrvPk($S, pkS),
+    In(<$S, $C, nonce, amd_tee>),
+    In(<$S, $C, nonce, report(h(<nonce, pkS>))>) ]
+  --[ ClientAcceptsLegacy($C, $S, nonce, pkS) ]->
+  [ AcceptedLegacy($C, $S, nonce) ]
+
+lemma legacy_acceptance_requires_prior_request:
+  "All C S nonce pkS #i.
+    ClientAcceptsLegacy(C, S, nonce, pkS) @ i
+    ==>
+      (Ex #j. ClientRequestsEvidence(C, S, nonce, amd_tee) @ j & j < i)"
+
+lemma legacy_no_tee_is_fail_closed:
+  "All C S nonce #i #j pkS.
+    ClientRejectsNoTEE(C, S, nonce) @ i
+    & ClientAcceptsLegacy(C, S, nonce, pkS) @ j
+    ==> F"
+
+lemma legacy_attestation_binds_nonce_and_public_key:
+  "All C S nonce pkS #i.
+    ClientAcceptsLegacy(C, S, nonce, pkS) @ i
+    ==>
+      (Ex C0 #j. ServerCreatesLegacyReport(S, C0, nonce, pkS) @ j & j < i)"
+
+end

@@ -1,0 +1,807 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[margin=1in]{geometry}
+\usepackage{hyperref}
+\usepackage{xurl}
+\usepackage{tabularx}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{float}
+\usepackage{listings}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,calc}
+\emergencystretch=2em
+
+\definecolor{boundgreen}{RGB}{223,242,216}
+\definecolor{boundborder}{RGB}{76,140,74}
+\definecolor{riskred}{RGB}{252,224,224}
+\definecolor{riskborder}{RGB}{180,64,64}
+\definecolor{flowblue}{RGB}{232,239,250}
+\definecolor{flowborder}{RGB}{74,106,168}
+\definecolor{statusgreen}{RGB}{223,242,216}
+\newcommand{\statuschecked}{\texttt{checked}}
+\newcommand{\statuspartial}{\texttt{partial}}
+\newcommand{\statusnotyet}{\texttt{not yet}}
+\newcommand{\statusna}{\texttt{n/a}}
+\newcommand{\resultverified}{\colorbox{statusgreen}{\strut verified}}
+\newcommand{\resultfalsified}{\colorbox{riskred}{\strut falsified}}
+\newcommand{\resulttrue}{\colorbox{statusgreen}{\strut true}}
+\newcommand{\resultfalse}{\colorbox{riskred}{\strut false}}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue,
+  urlcolor=blue,
+  hypertexnames=false,
+  pdftitle={A Machine-Checked Case Study Motivated by Recent Agent2Agent Discussion: Cocos AI aTLS},
+  pdfauthor={Akira Okutomi}
+}
+
+\lstdefinestyle{shellstyle}{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  frame=single,
+  columns=fullflexible
+}
+
+\title{A Machine-Checked Case Study Motivated by Recent Agent2Agent Discussion:\\Cocos AI aTLS}
+\author{Akira Okutomi}
+\date{April 12, 2026}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+Motivated by the recent IETF agent2agent discussion about how to distinguish
+informal security goals from machine-checked claims, this report presents a
+small machine-checked case study of Cocos AI aTLS~\cite{cocosrepo}. In this
+workspace, the legacy/current comparison already shows that moving to the
+post-handshake design does not by itself resolve same-endpoint authenticity
+under the explicit leakage assumption used by the relay models. The current
+verifier additionally exposes canonical exporter-label acceptance and a weaker
+missing-attestation-after-offer issue. The workspace combines implementation
+regression tests, Tamarin models, and ProVerif~\cite{tamarin,proverif} models,
+and also includes narrower checks for leaf-key substitution and session-scoped
+context reuse. It therefore distinguishes informal security goals for the
+design from a smaller set of machine-checked claims that this workspace can
+already support directly.
+\end{abstract}
+
+\section{Overview}
+
+This report is framed as a machine-checked case study motivated by the recent
+agent2agent discussion about protocol goals and machine-checked claims. Within
+that framing, the workspace is centered on a small set of security questions
+about attested origin, binding completeness, and same-endpoint authenticity.
+Its main result is already visible at that level: moving from the legacy
+pre-handshake design to the current post-handshake design does not by itself
+resolve same-endpoint authenticity under the explicit leakage assumption used
+by the relay models, while the current verifier additionally exposes
+canonical exporter-label acceptance and a weaker missing-attestation-after-offer
+issue.
+
+Across the workspace, Go-language regressions act as implementation anchors for
+concrete verifier behavior. Tamarin is used for request/offer gating,
+attestation presence, canonical-label enforcement, replay/one-shot behavior,
+and a same-endpoint attack trace under leakage. ProVerif is used for
+correspondence-style clarification of attested origin vs.\ same-endpoint
+authenticity, including the legacy/current comparison.
+
+This workspace was also motivated by the IETF agent2agent mailing-list
+discussion around how to separate informal security goals from smaller
+machine-checked claims in protocol analysis~\cite{a2aml,fatt}.
+
+The current workspace is organized around a small verification tree plus a
+small set of implementation regressions.\footnote{Main repo locations:
+\path{verification/} and \path{pkg/atls/ea/authenticator_test.go}.}
+
+This report should not be read as a condemnation of Cocos AI or of the broader
+goal of authenticated AI infrastructure. The project is attempting ambitious
+work at the edge of current protocol and attestation practice, and that is
+precisely why early machine-checked scrutiny is useful here. The intent of this
+workspace is to make design assumptions and boundary conditions explicit while
+the design is still evolving, not to dismiss the underlying direction.
+
+\section{Scope}
+
+After the legacy pre-handshake design anchored around commit
+\texttt{e372cfc}, Cocos AI later introduced the current post-handshake
+exported-authenticator form anchored around commit \texttt{80bf813} (as of 9
+April 2026).
+
+This report focuses on that current post-handshake aTLS behavior, while
+keeping a compact legacy/current design split and a minimal reproducibility
+path for the older pre-handshake design. On the current side, it examines
+relay/diversion, canonical exporter-label enforcement, missing attestation after
+offer, leaf-key substitution, and
+context-reuse questions through a mix of implementation tests and small formal
+models.
+
+More concretely, it focuses on the exported-authenticator\footnote{In this
+report, ``exported authenticator'' refers to the post-handshake TLS
+authenticator exchange used by the current Cocos AI design, rather than a
+certificate message carried inside the initial handshake~\cite{rfc9261}.} path used around
+Cocos AI aTLS:
+
+\begin{enumerate}
+\item the client completes a TLS 1.3 handshake,
+\item the client sends an exported-authenticator request with a fresh request
+context,
+\item the server constructs an authenticator and may attach CMW
+attestation\footnote{In this report, ``CMW attestation'' refers to the
+attestation payload and certificate-extension format used by the current Cocos
+AI aTLS implementation.} data as a leaf extension,
+\item the client validates the authenticator and then verifies the attestation
+binder against the connection state, request context, and leaf public key.
+\end{enumerate}
+
+The modeling style is deliberately minimal. Each artifact aims to be a small
+working model for one question at a time, rather than a single monolithic proof
+attempt for the entire protocol stack.
+
+\section{Assumptions}
+
+\begin{itemize}
+\item The relay/diversion analysis uses an explicit leakage assumption: the
+attested ephemeral private key is revealed after attestation issuance.
+\item The context-reuse result is session-scoped: with
+\texttt{ea.Session}\footnote{In this report, \texttt{ea.Session} refers to the
+verifier-side state used to remember which request contexts have already been
+accepted, so that the same context cannot be accepted twice.} the
+workspace checks a one-shot guarantee; without session tracking, replay remains
+possible at the API level.
+\end{itemize}
+
+\section{Out of Scope}
+
+\begin{itemize}
+\item A full symbolic model of TLS 1.3 or of the complete Cocos AI
+implementation.
+\item End-to-end exploitability of the missing-attestation-after-offer result under the default
+server wiring.
+\item Full X.509 certificate-chain validation and complete evidence-format
+parsing.
+\end{itemize}
+
+\section{Design Split: Legacy vs. Current}
+
+Cocos AI aTLS should be read as two different designs rather than one continuous
+protocol:
+
+\begin{itemize}
+\item \textbf{Legacy pre-handshake aTLS.}
+The older design used OpenSSL custom extensions during the TLS 1.3 handshake.
+In that design, an evidence request was sent in \texttt{ClientHello}, a TEE
+type value was carried in \texttt{EncryptedExtensions}, and the attestation
+report was attached as a certificate extension.
+\item \textbf{Current post-handshake aTLS.}
+The current design completes the TLS 1.3 handshake first and then performs a
+post-handshake exported-authenticator exchange that carries attestation data in
+the authenticator response.
+\end{itemize}
+
+This report focuses primarily on the current post-handshake design, but it also
+keeps a minimal reproducibility path for the legacy pre-handshake design so
+that the two generations are not conflated.
+
+The immediate design lesson from comparing the two generations is narrow but
+important. Moving attestation from the handshake to a post-handshake
+exported-authenticator exchange changes message placement and some binding
+inputs, but it does not by itself establish same-endpoint authenticity. On the
+relay question modeled in this report,
+the key requirement is not only where attestation is carried, but whether the
+accepted peer is demonstrably tied to the client's exact live channel.
+
+\begin{table}[H]
+\centering
+\footnotesize
+\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{0.19\textwidth}XX@{}}
+\toprule
+\textbf{Comparison point} & \textbf{Legacy pre-handshake} & \textbf{Current post-handshake} \\
+\midrule
+Attestation placement &
+Carried inside the TLS handshake. &
+Carried in a post-handshake exported authenticator. \\
+Main binding in this workspace &
+Client nonce + leaf public key. &
+Request context + leaf public key + exported TLS value. \\
+Checked here &
+Request gating and nonce/public-key binding. &
+Canonical exporter-label enforcement, missing attestation after offer, leaf-key substitution, context reuse, and relay / same-endpoint authenticity under leakage. \\
+Additional note &
+Fail-closed \texttt{NO\_TEE} is checked as a narrower
+implementation condition. &
+The current generation is the main subject of the report and has broader reproducibility coverage. \\
+\bottomrule
+\end{tabularx}
+\caption{Comparison of the two Cocos AI aTLS generations. The key takeaway for this report is that message placement changes between the two generations, but same-endpoint authenticity still requires an explicit binding to the client's exact live channel.}
+\label{tab:design-split}
+\end{table}
+
+The legacy side is therefore kept mainly as a comparison point and as a compact
+methodological example. In this workspace it confirms acceptance only after a
+prior request and nonce/public-key binding, while also checking fail-closed
+\texttt{NO\_TEE}\footnote{Here \texttt{NO\_TEE} means that no TEE is selected
+or attested for the connection.} handling as a narrower implementation
+condition. A more detailed sketch of the legacy flow is left to the Appendix.
+
+\section{Verification Artifacts and Implementation Flow}
+
+The workspace is organized around three narrowly scoped security questions:
+
+\begin{enumerate}
+\item whether client acceptance preserves origin authenticity at the
+attestation level,
+\item what is explicitly bound into the attestation and binder inputs,
+especially the request context, the leaf public key, and any TLS
+exporter-derived values, and
+\item whether client acceptance further establishes same-endpoint
+authenticity, rather than only attested origin authenticity plus proof of
+possession of the attested leaf key.
+\end{enumerate}
+
+The detailed code-path inventory and artifact layout are kept in the
+verification README.\footnote{\path{verification/README.md}. For the current
+design, the main moving parts are the internal transport request/response path,
+the attestation provider, and the binder/verifier helpers under
+\path{pkg/atls/}.}
+
+\subsection{Current Post-Handshake Flow}
+
+At the implementation level, the current Cocos AI flow relevant to this report is:
+
+\begin{enumerate}
+\item the client first completes a TLS 1.3 handshake,
+\item the client builds an exported-authenticator request containing a fresh
+context and the attestation offer extension,
+\item the server receives that request and calls
+\texttt{BuildLeafExtensions(...)} to construct the leaf certificate-entry
+extensions for the authenticator response,
+\item the default provider computes a binding from
+\texttt{ExportKeyingMaterial(label, context)} and the leaf public key, then
+embeds evidence plus binder values into a CMW attestation extension,
+\item the client verifies the authenticator and, when the extension is present,
+parses the attestation payload and verifies the binder.
+\end{enumerate}
+
+This is the execution path that the current verification artifacts try to
+mirror.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  participant/.style={draw, rounded corners, minimum width=3.1cm, minimum height=0.9cm, align=center, font=\small},
+  lifeline/.style={densely dashed, gray!70, thick},
+  procbox/.style={draw=flowborder, fill=flowblue, rounded corners=3pt, align=center, font=\footnotesize, text width=2.8cm, inner sep=5pt},
+  msg/.style={-{Latex[length=3mm]}, thick},
+  msglabel/.style={font=\footnotesize, fill=white, inner sep=1pt, align=center},
+  sidenote/.style={draw, rounded corners, align=left, font=\footnotesize, inner sep=4pt, text width=2.9cm},
+  legend/.style={draw, rounded corners, font=\footnotesize, inner sep=3pt}
+]
+\node[participant] (client) at (0,0) {Client};
+\node[participant] (server) at (8.9,0) {Server};
+
+\draw[lifeline] (0,-0.7) -- (0,-8.7);
+\draw[lifeline] (8.9,-0.7) -- (8.9,-8.7);
+
+\node[procbox, text width=2.8cm] (curr_hs_c) at (0,-1.5) {TLS 1.3\\handshake complete};
+\node[procbox, text width=2.8cm] (curr_hs_s) at (8.9,-1.5) {TLS 1.3\\handshake complete};
+
+\draw[thick] (curr_hs_c.east) -- (curr_hs_s.west);
+
+\node[procbox, text width=2.9cm] (curr_req) at (0,-3.5) {build EA request\\fresh request context\\attestation offer};
+
+\node[procbox, text width=2.8cm] (curr_srv) at (8.9,-5.35) {parse request\\BuildLeaf\\Extensions\\ComputeBinding\\(state, label,\\context, leaf)};
+
+\draw[msg]
+  ([yshift=-2pt]curr_req.east) --
+  node[msglabel, above=8pt] {request frame}
+  ([yshift=16pt]curr_srv.west);
+
+\node[procbox, text width=2.9cm] (curr_verify) at (0,-7.95) {verify authenticator\\verify attestation binder};
+
+\draw[msg]
+  ([yshift=-16pt]curr_srv.west) --
+  node[msglabel, above=12pt] {authenticator frame}
+  ([yshift=2pt]curr_verify.east);
+
+\node[sidenote, fill=boundgreen, draw=boundborder] at (12.95,-5.35)
+  {\textbf{Binding note:} the attestation binder includes the leaf public key, request context, and exported TLS value.};
+\node[sidenote, fill=flowblue, draw=flowborder] at (12.95,-7.95)
+  {\textbf{Design note:} the authenticator carries the certificate chain and attestation payload as a post-handshake response.};
+\end{tikzpicture}
+\caption{Current post-handshake exported-authenticator flow. Blue boxes are protocol steps; green notes mark values explicitly bound into the attestation binder.}
+\label{fig:current-flow}
+\end{figure}
+
+\section{Main Findings Summary}
+
+\begin{table}[H]
+\centering
+\footnotesize
+\renewcommand{\arraystretch}{1.18}
+\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{0.21\textwidth}>{\raggedright\arraybackslash}p{0.24\textwidth}>{\raggedright\arraybackslash}p{0.18\textwidth}X@{}}
+\toprule
+\textbf{Finding} & \textbf{Evidence} & \textbf{Result} & \textbf{Interpretation} \\
+\midrule
+Redesign effect on same-endpoint authenticity & legacy ProVerif + current ProVerif + current Tamarin\footnotemark & not resolved by the post-handshake redesign under the explicit leakage assumption & message placement changed, but live-channel binding remains unestablished \\
+Relay/diversion risk reported in CVE-2026-33697~\cite{ghsa-cve,nvd-cve,osv-cve} & current ProVerif + current Tamarin attack trace & accepted origin persists, but same-endpoint authenticity fails under leakage & CVE-aligned design-level concern, not a full exploit proof \\
+Canonical exporter-label enforcement & Go regression + falsified Tamarin lemma + ProVerif correspondence & canonical-label enforcement fails in current verifier behavior & strongest additional finding in this workspace \\
+Missing attestation after offer & Go regression + falsified Tamarin lemma & API-level acceptance remains possible after an explicit offer & weaker; end-to-end exploitability is not established here \\
+\bottomrule
+\end{tabularx}
+\renewcommand{\arraystretch}{1.0}
+\caption{Summary of the main findings supported by this workspace.}
+\label{tab:findings-summary}
+\end{table}
+\footnotetext{The initial Tamarin model in this workspace did not target the relay/diversion assumptions behind CVE-2026-33697. After the models were extended toward same-endpoint authenticity under an explicit ephemeral-key leakage assumption, Tamarin also exposed related behavior.}
+
+\vspace{0.5em}
+Go-language regressions, Tamarin models, and ProVerif models play different
+roles here rather than repeating the same check in three forms. The Go-language
+tests anchor concrete verifier behavior in the current code path. Tamarin
+captures gating, attestation presence, canonical-label enforcement,
+replay/one-shot behavior, and a same-endpoint attack trace under leakage.
+ProVerif clarifies correspondence-style questions about attested origin,
+same-endpoint authenticity, and the legacy/current comparison. A wider
+coverage inventory is included in the Appendix.
+
+\section{Current Design Results}
+
+\subsection{Implementation Regression Tests (Go-language)}
+
+The current-design Go regressions live in the main authenticator test
+file.\footnote{\path{pkg/atls/ea/authenticator_test.go}} Their role here is
+not to provide a formal security proof, but to act as implementation anchors
+for several narrow security-relevant behaviors in the current code path. In
+the report, the important point is what those tests check rather than their
+exact names. The current set covers four behaviors:
+
+\begin{itemize}
+\item acceptance of a non-canonical exporter label during attestation
+verification,
+\item API-level acceptance when an explicit attestation offer is followed by an
+authenticator without an attestation extension,
+\item a narrow positive check against leaf-key substitution, and
+\item the split between session-scoped one-shot context handling and replayable
+API-level validation without session tracking.
+\end{itemize}
+
+The exact test names and reproduction commands are documented in the
+verification README.\footnote{\path{verification/README.md}}
+
+\subsection{Tamarin Results}
+
+The current-design Tamarin artifacts are summarized in the Tamarin
+README.\footnote{\path{verification/tamarin/README.md}} Together they cover
+attestation offer vs.\ plain request, authenticator origin, attestation
+presence, canonical exporter-label enforcement, and one-shot vs.\ replayable
+request-context usage.
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{0.28\textwidth}X>{\raggedright\arraybackslash}p{0.16\textwidth}@{}}
+\toprule
+\textbf{Property} & \textbf{Meaning} & \textbf{Result} \\
+\midrule
+Server-origin authenticity & An attested client acceptance must correspond to a server-side authenticator creation event. & \resultverified \\
+Offer-gated acceptance & A successful acceptance must be preceded by a client attestation offer. & \resultverified \\
+No attested acceptance from plain mode & Plain requests do not lead to attested acceptance. & \resultverified \\
+Canonical exporter-label enforcement & Accepted attestations should only use the canonical exporter label. & \resultfalsified \\
+No success without attestation after offer & An offered request should not succeed when the attestation extension is missing. & \resultfalsified \\
+\bottomrule
+\end{tabularx}
+\caption{Current-design Tamarin results}
+\label{tab:tamarin-current}
+\end{table}
+
+The falsified canonical exporter-label lemma is the stronger additional finding. The
+falsified missing-attestation-after-offer lemma is weaker because its reachability
+in the default server wiring has not been shown end-to-end.
+
+A separate current-design Tamarin model checks same-endpoint authenticity under
+the explicit leakage assumption.\footnote{\path{verification/tamarin/cocos_same_endpoint_current.spthy}}
+In that model:
+\begin{itemize}
+\item \texttt{received\_attestation\_has\_server\_origin} is verified,
+\item \texttt{same\_endpoint\_can\_fail\_under\_leakage} has a verified attack
+trace.
+\end{itemize}
+This mirrors the relay/same-endpoint split also seen in the ProVerif artifacts.
+
+A separate session-scoped Tamarin model checks a different
+question.\footnote{\path{verification/tamarin/cocos_context_reuse_current.spthy}}
+In that model,
+\texttt{session\_context\_is\_one\_shot} is verified and
+\texttt{no\_session\_replay\_exists} has a verified replay trace. This is meant
+to track the semantics of \texttt{ea.Session}; it should not be read as a claim
+that every current-design validation path is automatically one-shot.
+
+\subsection{ProVerif Results}
+
+The ProVerif artifacts are summarized in the ProVerif
+README.\footnote{\path{verification/proverif/README.md}} They were added
+because the first Tamarin model, which was not explicitly focused on the
+CVE-aligned relay/diversion question, did not cover ephemeral key compromise,
+distinct channels or sessions, or a correspondence goal for same-channel
+endpoint authenticity.
+
+The current side carries the main ProVerif weight in this report. The
+legacy-side ProVerif results are retained in the Appendix only as a compact
+comparison point; the main body keeps the emphasis on what the current
+post-handshake design does and does not establish.
+
+The attack assumption behind the published relay-risk discussion is represented
+explicitly by leakage of the ephemeral private key after attestation issuance.
+
+\subsubsection*{Current-Design Results}
+
+\begin{table}[H]
+\centering
+\footnotesize
+\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{0.20\textwidth}>{\raggedright\arraybackslash}p{0.36\textwidth}>{\centering\arraybackslash}p{0.11\textwidth}X@{}}
+\toprule
+\textbf{Model thread} & \textbf{Correspondence query} & \textbf{Result} & \textbf{Interpretation} \\
+\midrule
+Request-gated acceptance &
+\texttt{ClientAccepts ==> ClientSendsEARequest} &
+\resulttrue{} &
+Acceptance still implies a prior client-side exported-authenticator request. \\
+Server-side attestation origin &
+\texttt{ClientAccepts ==> ServerIssuesAttestation} &
+\resulttrue{} &
+Client acceptance still tracks genuine server-side attestation origin. \\
+Server-side binding/construction event &
+\texttt{ClientAccepts ==> ServerBuildsAuthenticator} &
+\resultfalse{} &
+Under the explicit leakage assumption, the current relay model does not preserve the same server-side channel/build event for an accepted client session. \\
+Relay / same-endpoint authenticity &
+\texttt{current: ClientAccepts ==> ServerBindsSameChannel} &
+\resultfalse{} &
+Under the explicit leakage assumption, the current relay model does not establish same-endpoint authenticity for a client-accepted session. \\
+Canonical exporter-label enforcement &
+\texttt{current: ClientAccepts ==> ServerUsesCanonicalLabel} &
+\resultfalse{} &
+Acceptance does not imply that the canonical exporter label was used. \\
+Leaf-key substitution resistance &
+\texttt{current: ClientAccepts ==> ServerAttestsLeafKey} &
+\resulttrue{} &
+Within this abstraction, client acceptance remains tied to the attested leaf public key. \\
+\bottomrule
+\end{tabularx}
+\caption{Summary of the current-design ProVerif correspondence queries used in this workspace.}
+\label{tab:proverif-results}
+\end{table}
+
+Taken together with the other checks, the ProVerif side gives a narrower
+binding picture for the current design: it supports binding to the request
+context and leaf key, but not to the client's live peer identity or
+same-endpoint authenticity under the explicit leakage assumption used by the
+relay models. Read together with the Appendix, this also shows that moving
+from the legacy pre-handshake design to the current post-handshake design does
+not by itself resolve the same-endpoint problem.
+
+Figure~\ref{fig:relay} gives the relay/diversion intuition behind those
+current-design ProVerif results and highlights the gap between attested origin
+and same-endpoint authenticity.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  participant/.style={draw, rounded corners, minimum width=2.8cm, minimum height=0.9cm, align=center, font=\small},
+  lifeline/.style={densely dashed, gray!70, thick},
+  msg/.style={-{Latex[length=3mm]}, thick},
+  leak/.style={-{Latex[length=3mm]}, thick, dashed, riskborder},
+  msglabel/.style={font=\footnotesize, fill=white, inner sep=1pt, align=center},
+  sidenote/.style={draw, rounded corners, align=left, font=\footnotesize, inner sep=4pt, text width=3.25cm},
+  legend/.style={draw, rounded corners, font=\footnotesize, inner sep=3pt}
+]
+\node[participant] (svc) at (0,0) {Genuine\\service};
+\node[participant] (att) at (5.0,0) {Relay\\attacker};
+\node[participant] (cli) at (10.0,0) {Client};
+
+\draw[lifeline] (0,-0.7) -- (0,-9.2);
+\draw[lifeline] (5.0,-0.7) -- (5.0,-9.2);
+\draw[lifeline] (10.0,-0.7) -- (10.0,-9.2);
+
+\draw[msg] (0.25,-2.0) -- node[msglabel, above] {authenticator + attestation} (4.75,-2.0);
+\node[sidenote, fill=boundgreen, draw=boundborder] at (12.45,-1.7)
+  {Bound in attestation:\\service identity, ephemeral public key $pk_E$, request context.};
+
+\draw[leak] (0.25,-3.6) -- node[msglabel, above, text=riskborder] {ephemeral private key leaks} (4.75,-3.6);
+\node[sidenote, fill=riskred, draw=riskborder] at (12.45,-4.25)
+  {Leak assumption used by the relay analysis: attacker obtains the private key corresponding to the attested ephemeral public key.};
+
+\draw[msg] (5.25,-5.2) -- node[msglabel, above] {forward authenticator} (9.75,-5.2);
+\draw[msg] (9.75,-6.8) -- node[msglabel, above] {client-side live challenge} (5.25,-6.8);
+\draw[msg] (5.25,-8.1) -- node[msglabel, above] {response signed with leaked key} (9.75,-8.1);
+
+\node[sidenote, fill=riskred, draw=riskborder] at (12.55,-7.45)
+  {Not bound in the attestation itself:\\the client's live channel identity or a proof that the accepted peer is the same endpoint as the genuine service.};
+
+\end{tikzpicture}
+\caption{Relay/diversion intuition aligned with the risk reported in CVE-2026-33697. Green notes mark values explicitly bound into the attestation binder; red notes mark the leakage assumption or values not bound to the client's live channel proof.}
+\label{fig:relay}
+\end{figure}
+
+\section{Limits and Interpretation}
+
+Taken together, the workspace narrows several important questions to
+machine-checked results, but it does not elevate every design goal into a
+proved theorem.
+
+\subsection{Relay / same-endpoint authenticity under leakage}
+
+The relay/diversion and same-endpoint authenticity results are design-level and depend on the explicit
+ephemeral-key leakage assumption used by the ProVerif and Tamarin models. They
+are best read as evidence aligned with the relay/diversion risk reported in
+CVE-2026-33697~\cite{ghsa-cve,nvd-cve,osv-cve}, not as a full end-to-end exploit proof for the complete
+implementation.
+
+Within this workspace, the move from the legacy pre-handshake design to the
+current post-handshake design does not eliminate the same-endpoint
+authenticity failure under that explicit leakage assumption. In that narrow
+CVE-aligned sense, the redesign by itself does not yet provide evidence that
+the issue has been resolved.
+
+For authenticated AI infrastructure, same-endpoint authenticity is not an
+optional refinement: it is needed to distinguish the genuine remote endpoint
+from a relay or stand-in that can present valid attestation material. That
+requires more than a redesign of message placement alone. At minimum, the
+protocol needs a proof that the accepted peer is bound to the exact live
+channel seen by the client, rather than only to attested origin plus
+possession of the attested key. Under the explicit leakage assumption used
+here, that likely requires either a stronger non-exportability assumption for
+the attested key material or an additional non-transferable channel-bound
+proof that a relay attacker cannot replay from a different endpoint.
+
+\subsection{Canonical Exporter-Label Enforcement}
+
+The canonical exporter-label issue is the strongest additional finding in this
+workspace because it is supported by three separate anchors: a falsified
+Tamarin property, a ProVerif correspondence whose canonical-label condition
+fails, and a Go regression showing acceptance of an alternate exporter label.
+
+\subsection{Missing Attestation After Offer}
+
+The missing-attestation-after-offer issue is weaker. The workspace supports it
+with a falsified Tamarin property and a Go regression, but the result remains
+API-level. The default server wiring appears more fail-closed than this
+verifier behavior alone suggests, so end-to-end exploitability is not
+established here.
+
+\subsection{Leaf-key substitution and context reuse}
+
+The workspace also includes two narrower results. First, leaf-key substitution
+is supported by a Go regression and by a ProVerif correspondence in which
+\texttt{ClientAccepts ==> ServerAttestsLeafKey} holds. Second, request-context
+one-shot behavior is established only for the explicit \texttt{ea.Session}
+path; without session tracking, replay remains possible at the API level. In
+that sense, the current design shows a scoped one-shot guarantee rather than a
+general replay-resistant result.
+
+\section{Reproducibility and Repository}
+
+This workspace is based on the Cocos AI repository~\cite{cocosrepo}, with the legacy/current
+discussion anchored around commits \texttt{e372cfc} and \texttt{80bf813},
+respectively.
+
+The current design is reproduced through the repository wrapper
+scripts.\footnote{\path{verification/run-legacy-tests.sh}; \path{verification/run-go-tests.sh}; \path{verification/run-tamarin.sh}; \path{verification/run-proverif.sh}} The
+recommended order is legacy first, then Go tests, then Tamarin, then
+ProVerif.
+
+The legacy design is kept as a compact comparison point rather than as
+the main subject of the report. The legacy wrapper script\footnote{\path{verification/run-legacy-tests.sh}}
+checks out commit \texttt{e372cfc} into a temporary worktree and runs a narrow
+legacy regression anchor. It is paired with the legacy Tamarin
+model,\footnote{\path{verification/tamarin/cocos_legacy_attestation.spthy}}
+which verifies request-gated acceptance, fail-closed \texttt{NO\_TEE}
+handling, and nonce/public-key binding. The legacy ProVerif comparison
+models\footnote{\path{verification/proverif/cocos_legacy_request_binding.pv};
+\path{verification/proverif/cocos_legacy_relay_attack.pv}} add matching
+formal results on the same theme.
+
+The verification workspace overview, tool-specific notes, and relay-aligned
+evidence note are all linked from the repository documentation.\footnote{Overview:
+\path{verification/README.md}. Tamarin notes:
+\path{verification/tamarin/README.md}. ProVerif notes:
+\path{verification/proverif/README.md}. Relay note:
+\path{verification/proverif/CVE-2026-33697-evidence.md}.}
+
+Raw command outputs, scripts, and file inventories are intentionally kept in
+the repository rather than repeated in the PDF.
+
+\section{Open Problems}
+
+This workspace narrows several questions to machine-checked results, but it
+also leaves a short list of concrete follow-up checks:
+
+\begin{enumerate}
+\item how to guarantee same-endpoint authenticity even under the explicit
+leakage assumption used by the relay models,
+\item whether canonical exporter-label enforcement can be made fail-closed in
+the verifier,
+\item whether missing attestation after an explicit offer is blocked
+end-to-end in the default server wiring,
+\item how much replay resistance can be guaranteed outside the explicit
+\texttt{ea.Session} path,
+\item and whether extension-placement / certificate-entry confusion should be
+checked more broadly beyond the current path already covered here.
+\end{enumerate}
+
+\section{Conclusion}
+
+Early machine-checked scrutiny is useful here because it already exposes
+meaningful protocol results early in the design cycle. In particular, the
+legacy/current comparison shows that relocating attestation into the
+post-handshake exported-authenticator path does not by itself resolve
+same-endpoint authenticity on the relay question modeled here. The current
+verifier path also exposes additional problems beyond
+that published relay-aligned concern, most clearly in canonical
+exporter-label enforcement and more weakly in missing attestation after
+offer. Together with the narrower leaf-key and session-scoped replay results,
+this makes the workspace a scoped, reproducible starting point for further
+checking rather than a complete endpoint-verification story.
+
+\section*{References}
+
+\begin{thebibliography}{99}
+\bibitem{cocosrepo}
+Cocos AI repository used by this workspace:
+\url{https://github.com/ultravioletrs/cocos}.
+
+\bibitem{a2aml}
+IETF agent2agent mailing-list discussion, ``Re: Question about
+\texttt{draft-howard-virp-03},'' including the clarification that the draft did
+not yet carry machine-checked proof claims and the suggestion to frame such
+statements as informal security goals.
+
+\bibitem{fatt}
+M. U. Sardar, ``TLS FATT Extension,'' Internet-Draft,
+\url{https://www.ietf.org/archive/id/draft-usama-tls-fatt-extension-02.html#section-4}.
+
+\bibitem{rfc8446}
+E. Rescorla, ``The Transport Layer Security (TLS) Protocol Version 1.3,''
+RFC 8446, 2018.
+
+\bibitem{rfc9261}
+K. Bhargavan, B. Delignat-Lavaud, and others, ``Exported Authenticators in
+TLS,'' RFC 9261, 2022.
+
+\bibitem{ghsa-cve}
+GitHub Security Advisory, ``GHSA-vfgg-mvxx-mgg7: CoCoS attested TLS is
+vulnerable to relay attacks via extracted ephemeral TLS keys,''
+\url{https://github.com/ultravioletrs/cocos/security/advisories/GHSA-vfgg-mvxx-mgg7}.
+
+\bibitem{nvd-cve}
+NVD entry for CVE-2026-33697:
+\url{https://nvd.nist.gov/vuln/detail/CVE-2026-33697}.
+
+\bibitem{osv-cve}
+OSV entry for CVE-2026-33697:
+\url{https://osv.dev/vulnerability/CVE-2026-33697}.
+
+\bibitem{relay-note}
+Public discussion around CVE-2026-33697, plus a local repository note
+that summarizes how the workspace aligns its relay/diversion models with that
+discussion.
+
+\bibitem{tamarin}
+D. Basin, C. Cremers, J. Dreier, S. Meier, R. Sasse, and B. Schmidt,
+\emph{Tamarin Prover}.
+
+\bibitem{proverif}
+B. Blanchet, V. Cheval, and M. Sylvestre, \emph{ProVerif}.
+\end{thebibliography}
+
+\newpage
+\section*{Appendix}
+\addcontentsline{toc}{section}{Appendix}
+
+\subsection*{Workspace Coverage Matrix}
+
+\begin{table}[H]
+\centering
+\footnotesize
+\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{0.38\textwidth}>{\centering\arraybackslash}p{0.22\textwidth}>{\centering\arraybackslash}p{0.22\textwidth}@{}}
+\toprule
+\textbf{Attack family} & \textbf{Legacy pre-handshake} & \textbf{Current post-handshake} \\
+\midrule
+Freshness-token / request-context binding & \statuschecked & \statuschecked \\
+Context reuse / one-shot request contexts & \statusnotyet & \statuspartial \\
+Certificate / public-key substitution & \statuschecked & \statuschecked \\
+Legacy \texttt{NO\_TEE} fail-closed handling & \statuschecked & \statusna \\
+Current missing attestation after explicit offer & \statusna & \statuschecked \\
+Extension placement / certificate-entry confusion & \statusnotyet & \statuschecked \\
+Canonical exporter-label enforcement & \statusna & \statuschecked \\
+Relay / same-endpoint authenticity under leakage & \statuschecked & \statuschecked \\
+\bottomrule
+\end{tabularx}
+\caption{Workspace coverage across legacy and current Cocos AI aTLS designs. Here, ``checked'' means that the question is directly exercised by a test or formal model result in this workspace; it does not imply that the answer is always positive. The strongest current-design signals are freshness-token binding, certificate/public-key substitution, missing-attestation handling, canonical exporter-label enforcement, and relay / same-endpoint authenticity under the explicit leakage assumption. The strongest legacy-design signals are request-gated acceptance, nonce/public-key binding, and a legacy-side relay / same-endpoint comparison under leakage, with \texttt{NO\_TEE} fail-closed handling retained as a narrower implementation condition.}
+\label{tab:matrix}
+\end{table}
+
+\subsection*{Legacy ProVerif Results}
+
+\begin{table}[H]
+\centering
+\footnotesize
+\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{0.24\textwidth}>{\raggedright\arraybackslash}p{0.33\textwidth}>{\centering\arraybackslash}p{0.11\textwidth}X@{}}
+\toprule
+\textbf{Model thread} & \textbf{Correspondence query} & \textbf{Result} & \textbf{Interpretation} \\
+\midrule
+Request-gated acceptance &
+\texttt{ClientAcceptsLegacy ==> ClientRequestsEvidence} &
+\resulttrue{} &
+Within this abstraction, legacy acceptance still implies a prior evidence request. \\
+Server-side attestation origin &
+\texttt{ClientAcceptsLegacy ==> ServerIssuesLegacyAttestation} &
+\resulttrue{} &
+Within this abstraction, legacy acceptance still tracks a genuine server-side legacy attestation event. \\
+Server-side binding/construction event &
+\texttt{ClientAcceptsLegacy ==> ServerCreatesLegacyReport} &
+\resulttrue{} &
+Within this abstraction, legacy acceptance remains tied to the server-issued nonce/public-key report. \\
+Relay / same-endpoint authenticity &
+\texttt{ClientAcceptsLegacy ==> LegacyServerBindsSameChannel} &
+\resultfalse{} &
+Under the explicit leakage assumption, the legacy relay model does not establish same-endpoint authenticity for a client-accepted session. \\
+\bottomrule
+\end{tabularx}
+\caption{Summary of the legacy-design ProVerif correspondence queries used in this workspace.}
+\label{tab:proverif-legacy-results}
+\end{table}
+
+\subsection*{Legacy Pre-Handshake Flow}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  participant/.style={draw, rounded corners, minimum width=3.1cm, minimum height=0.9cm, align=center, font=\small},
+  lifeline/.style={densely dashed, gray!70, thick},
+  procbox/.style={draw=flowborder, fill=flowblue, rounded corners=3pt, align=center, font=\footnotesize, text width=2.55cm, inner sep=4pt},
+  msg/.style={-{Latex[length=3mm]}, thick},
+  msglabel/.style={font=\footnotesize, fill=white, inner sep=1pt, align=center},
+  sidenote/.style={draw, rounded corners, align=left, font=\footnotesize, inner sep=4pt, text width=2.9cm}
+]
+\node[participant] (legacyclient) at (0,0) {Client};
+\node[participant] (legacyserver) at (8.9,0) {Server};
+
+\draw[lifeline] (0,-0.7) -- (0,-8.8);
+\draw[lifeline] (8.9,-0.7) -- (8.9,-8.8);
+
+\node[procbox, text width=2.8cm] (clienthello) at (0,-2.2) {ClientHello\\evidence request\\fresh nonce};
+\node[procbox, text width=2.6cm] (encryptedext) at (8.9,-4.2) {Encrypted\\Extensions\\TEE type};
+\node[procbox, text width=2.8cm] (certificate) at (8.9,-6.5) {Certificate\\attestation extension\\report data =\\H(nonce || leaf pk)};
+\node[procbox, text width=3.0cm] (legacyverify) at (0,-7.9) {recompute\\H(nonce || leaf pk)\\verify attestation report};
+
+\draw[msg]
+  ([yshift=-2pt]clienthello.east) --
+  node[msglabel, above=10pt] {custom request extension}
+  ([yshift=10pt]encryptedext.west);
+
+\draw[msg]
+  ([yshift=0pt]encryptedext.west) --
+  node[msglabel, above=10pt, xshift=-6pt] {TEE selection}
+  ([yshift=6pt]legacyverify.east);
+
+\draw[msg]
+  ([yshift=-8pt]certificate.west) --
+  node[msglabel, below=10pt, xshift=18pt] {cert + attestation report}
+  ([yshift=-6pt]legacyverify.east);
+
+\node[sidenote, fill=flowblue, draw=flowborder] at (12.85,-4.1)
+  {\textbf{Design note:} in the legacy design, attestation is carried inside the TLS handshake rather than in a post-handshake authenticator.};
+\node[sidenote, fill=boundgreen, draw=boundborder] at (12.85,-6.8)
+  {\textbf{Binding note:} the checked legacy binding in this workspace is the client nonce together with the leaf certificate public key.};
+\end{tikzpicture}
+\caption{Legacy pre-handshake flow. This appendix figure is included for comparison only; the main report keeps the legacy analysis intentionally compact. Blue boxes are protocol steps, and the green note marks the explicit binding checked in the legacy artifacts.}
+\label{fig:legacy-flow-appendix}
+\end{figure}
+
+\end{document}

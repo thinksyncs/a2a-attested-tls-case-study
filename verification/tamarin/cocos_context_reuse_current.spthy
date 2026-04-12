@@ -1,0 +1,66 @@
+theory Cocos_Context_Reuse_Current
+begin
+
+functions:
+  pk/1,
+  signed_auth/2 [private]
+
+rule Register_Server:
+  [ Fr(~ltkS) ]
+  -->
+  [ !Pk($S, pk(~ltkS)) ]
+
+rule Client_Request_WithSession:
+  [ Fr(~ctx) ]
+  --[ ClientRequestsWithSession($C, $S, ~ctx) ]->
+  [ St_C_Session($C, $S, ~ctx),
+    FreshCtx($C, $S, ~ctx),
+    Out(<$C, $S, ~ctx>) ]
+
+rule Client_Request_WithoutSession:
+  [ Fr(~ctx) ]
+  --[ ClientRequestsWithoutSession($C, $S, ~ctx) ]->
+  [ St_C_NoSession($C, $S, ~ctx),
+    Out(<$C, $S, ~ctx>) ]
+
+rule Server_Issues_Authenticator:
+  [ !Pk($S, pkS),
+    In(<$C, $S, ctx>) ]
+  --[ ServerIssuesAuthenticator($S, $C, ctx, pkS) ]->
+  [ Out(<$S, $C, ctx, pkS, signed_auth(<ctx, pkS>, $S)>) ]
+
+rule Client_Validate_WithSession:
+  [ St_C_Session($C, $S, ctx),
+    FreshCtx($C, $S, ctx),
+    !Pk($S, pkS),
+    In(<$S, $C, ctx, pkS, signed_auth(<ctx, pkS>, $S)>) ]
+  --[ ClientAcceptsWithSession($C, $S, ctx, pkS) ]->
+  [ St_C_Session($C, $S, ctx) ]
+
+rule Client_Validate_WithoutSession:
+  [ St_C_NoSession($C, $S, ctx),
+    !Pk($S, pkS),
+    In(<$S, $C, ctx, pkS, signed_auth(<ctx, pkS>, $S)>) ]
+  --[ ClientAcceptsWithoutSession($C, $S, ctx, pkS) ]->
+  [ St_C_NoSession($C, $S, ctx) ]
+
+lemma session_acceptance_has_server_origin:
+  "All C S ctx pkS #i.
+    ClientAcceptsWithSession(C, S, ctx, pkS) @ i
+    ==>
+      (Ex C0 #j. ServerIssuesAuthenticator(S, C0, ctx, pkS) @ j & j < i)"
+
+lemma session_context_is_one_shot:
+  "All C S ctx pkS #i #j.
+    ClientAcceptsWithSession(C, S, ctx, pkS) @ i
+    & ClientAcceptsWithSession(C, S, ctx, pkS) @ j
+    ==> #i = #j"
+
+lemma no_session_replay_exists:
+  exists-trace
+  "Ex C S ctx pkS #i #j.
+    ClientAcceptsWithoutSession(C, S, ctx, pkS) @ i
+    & ClientAcceptsWithoutSession(C, S, ctx, pkS) @ j
+    & i < j"
+
+end

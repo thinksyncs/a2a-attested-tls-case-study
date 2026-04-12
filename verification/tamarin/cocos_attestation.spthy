@@ -1,0 +1,141 @@
+theory Cocos_Attestation
+begin
+
+builtins: hashing
+
+functions:
+  offered/0,
+  plain/0,
+  no_att/0,
+  att_label/0,
+  alt_label/0,
+  pk/1,
+  ekm/2,
+  binder/4,
+  signed_auth/2 [private]
+
+rule Register_Server:
+  [ Fr(~ltkS) ]
+  -->
+  [ !Pk($S, pk(~ltkS)) ]
+
+rule Client_Request_Offered:
+  [ Fr(~ctx) ]
+  --[ ClientOfferedAttestation($C, $S, ~ctx) ]->
+  [ St_C_Offered($C, $S, ~ctx),
+    Out(<$C, $S, ~ctx, offered>) ]
+
+rule Client_Request_Plain:
+  [ Fr(~ctx) ]
+  --[ ClientRequestedPlain($C, $S, ~ctx) ]->
+  [ St_C_Plain($C, $S, ~ctx),
+    Out(<$C, $S, ~ctx, plain>) ]
+
+rule Server_Respond_Attested_Default:
+  [ !Pk($S, pkS),
+    In(<$C, $S, ctx, offered>),
+    Fr(~evidence) ]
+  --[ ServerCreatesAuthenticator($S, $C, ctx, ~evidence, pkS) ]->
+  [ Out(
+      < $S,
+        $C,
+        <ctx, pkS, ~evidence, binder(att_label, h(pkS), h(<pkS, ekm(att_label, ctx)>), ctx)>,
+        signed_auth(<ctx, pkS, ~evidence, binder(att_label, h(pkS), h(<pkS, ekm(att_label, ctx)>), ctx)>, $S)
+      >
+    ) ]
+
+rule Server_Respond_Plain:
+  [ !Pk($S, pkS),
+    In(<$C, $S, ctx, offered>) ]
+  --[ ServerCreatesPlainAuthenticator($S, $C, ctx, pkS) ]->
+  [ Out(
+      < $S,
+        $C,
+        <ctx, pkS, no_att>,
+        signed_auth(<ctx, pkS, no_att>, $S)
+      >
+    ) ]
+
+rule Server_Respond_Attested_AlternateLabel:
+  [ !Pk($S, pkS),
+    In(<$C, $S, ctx, offered>),
+    Fr(~evidence) ]
+  --[ ServerCreatesAuthenticatorAltLabel($S, $C, ctx, ~evidence, pkS) ]->
+  [ Out(
+      < $S,
+        $C,
+        <ctx, pkS, ~evidence, binder(alt_label, h(pkS), h(<pkS, ekm(alt_label, ctx)>), ctx)>,
+        signed_auth(<ctx, pkS, ~evidence, binder(alt_label, h(pkS), h(<pkS, ekm(alt_label, ctx)>), ctx)>, $S)
+      >
+    ) ]
+
+rule Client_Verify_Plain:
+  [ St_C_Offered($C, $S, ctx),
+    !Pk($S, pkS),
+    In(
+      < $S,
+        $C,
+        <ctx, pkS, no_att>,
+        signed_auth(<ctx, pkS, no_att>, $S)
+      >
+    ) ]
+  --[ ClientAcceptsWithoutAttestation($C, $S, ctx, pkS) ]->
+  [ Accepted($C, $S, ctx) ]
+
+rule Client_Verify_Attested_Default:
+  [ St_C_Offered($C, $S, ctx),
+    !Pk($S, pkS),
+    In(
+      < $S,
+        $C,
+        <ctx, pkS, evidence, binder(att_label, h(pkS), h(<pkS, ekm(att_label, ctx)>), ctx)>,
+        signed_auth(<ctx, pkS, evidence, binder(att_label, h(pkS), h(<pkS, ekm(att_label, ctx)>), ctx)>, $S)
+      >
+    ) ]
+  --[ ClientAcceptsAttested($C, $S, ctx, evidence, pkS, att_label) ]->
+  [ Accepted($C, $S, ctx) ]
+
+rule Client_Verify_Attested_Alternate:
+  [ St_C_Offered($C, $S, ctx),
+    !Pk($S, pkS),
+    In(
+      < $S,
+        $C,
+        <ctx, pkS, evidence, binder(alt_label, h(pkS), h(<pkS, ekm(alt_label, ctx)>), ctx)>,
+        signed_auth(<ctx, pkS, evidence, binder(alt_label, h(pkS), h(<pkS, ekm(alt_label, ctx)>), ctx)>, $S)
+      >
+    ) ]
+  --[ ClientAcceptsAttested($C, $S, ctx, evidence, pkS, alt_label) ]->
+  [ Accepted($C, $S, ctx) ]
+
+lemma attested_authenticator_has_server_origin:
+  "All C S ctx evidence pkS lbl #i.
+    ClientAcceptsAttested(C, S, ctx, evidence, pkS, lbl) @ i
+    ==>
+      ((Ex C0 #j. ServerCreatesAuthenticator(S, C0, ctx, evidence, pkS) @ j & j < i)
+       |
+       (Ex C0 #j. ServerCreatesAuthenticatorAltLabel(S, C0, ctx, evidence, pkS) @ j & j < i))"
+
+lemma attested_acceptance_requires_prior_offer:
+  "All C S ctx #i.
+    Accepted(C, S, ctx) @ i
+    ==>
+      (Ex #j. ClientOfferedAttestation(C, S, ctx) @ j & j < i)"
+
+lemma plain_requests_do_not_produce_attested_acceptance:
+  "All C S ctx #i #j.
+    ClientRequestedPlain(C, S, ctx) @ i
+    & Accepted(C, S, ctx) @ j
+    ==> F"
+
+lemma accepted_attestation_must_use_default_exporter_label:
+  "All C S ctx evidence pkS #i.
+    ClientAcceptsAttested(C, S, ctx, evidence, pkS, alt_label) @ i
+    ==> F"
+
+lemma offered_requests_must_not_succeed_without_attestation:
+  "All C S ctx pkS #i.
+    ClientAcceptsWithoutAttestation(C, S, ctx, pkS) @ i
+    ==> F"
+
+end

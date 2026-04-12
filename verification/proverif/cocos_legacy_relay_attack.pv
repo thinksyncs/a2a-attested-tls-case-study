@@ -1,0 +1,79 @@
+(* Minimal ProVerif model for the legacy pre-handshake relay/diversion question.
+
+   Intuition:
+   - The client sends a fresh evidence request nonce in the handshake.
+   - The server returns a signed legacy attestation/report over
+     (service identity, leaf public key, nonce).
+   - The client accepts only if the signed report matches that same nonce and
+     the peer proves possession of the attested leaf private key on a live
+     challenge.
+   - The report still does not bind the peer to the client's live channel.
+   - If the attested leaf private key leaks after attestation issuance, a
+     relay attacker can terminate a distinct client-side channel while
+     presenting the genuine server's attestation.
+*)
+
+type skey.
+type pkey.
+
+free net: channel.
+free service: bitstring.
+free skA: skey [private].
+
+fun pk(skey): pkey.
+fun evidence_request(bitstring): bitstring [data].
+fun legacy_report(bitstring, pkey, bitstring): bitstring [data].
+fun certificate_frame(bitstring): bitstring [data].
+fun challenge_payload(bitstring, bitstring): bitstring [data].
+fun sign(bitstring, skey): bitstring.
+reduc forall m: bitstring, k: skey; checksign(sign(m, k), pk(k)) = m.
+
+event ClientRequestsEvidence(bitstring).
+event ServerCreatesLegacyReport(bitstring, pkey, bitstring).
+event ServerIssuesLegacyAttestation(bitstring, pkey, bitstring).
+event LegacyServerBindsSameChannel(bitstring, bitstring, pkey, bitstring).
+event EphemeralKeyLeakedLegacy(pkey).
+event ClientAcceptsLegacy(bitstring, bitstring, pkey, bitstring).
+
+let LegacyServer =
+  new skLeaf: skey;
+  in(net, evidence_request(nonce: bitstring));
+  let pkLeaf = pk(skLeaf) in
+  event ServerCreatesLegacyReport(service, pkLeaf, nonce);
+  event ServerIssuesLegacyAttestation(service, pkLeaf, nonce);
+  out(net, certificate_frame(sign(legacy_report(service, pkLeaf, nonce), skA)));
+  (* Explicit leakage assumption for the legacy relay comparison. *)
+  event EphemeralKeyLeakedLegacy(pkLeaf);
+  out(net, skLeaf);
+  in(net, challenge_payload(chan_id: bitstring, challenge: bitstring));
+  event LegacyServerBindsSameChannel(chan_id, service, pkLeaf, nonce);
+  out(net, sign(challenge_payload(chan_id, challenge), skLeaf)).
+
+let LegacyClient =
+  new nonce: bitstring;
+  new chan_id: bitstring;
+  new challenge: bitstring;
+  event ClientRequestsEvidence(nonce);
+  out(net, evidence_request(nonce));
+  in(net, cert: bitstring);
+  let certificate_frame(rep: bitstring) = cert in
+  let legacy_report(=service, pkLeaf: pkey, =nonce) = checksign(rep, pk(skA)) in
+  out(net, challenge_payload(chan_id, challenge));
+  in(net, resp: bitstring);
+  if checksign(resp, pkLeaf) = challenge_payload(chan_id, challenge) then
+    event ClientAcceptsLegacy(service, chan_id, pkLeaf, nonce).
+
+query sid_q: bitstring, pkLeaf_q: pkey, nonce_q: bitstring;
+  event(ClientAcceptsLegacy(service, sid_q, pkLeaf_q, nonce_q))
+  ==> event(ClientRequestsEvidence(nonce_q)).
+
+query sid_q: bitstring, pkLeaf_q: pkey, nonce_q: bitstring;
+  event(ClientAcceptsLegacy(service, sid_q, pkLeaf_q, nonce_q))
+  ==> event(ServerIssuesLegacyAttestation(service, pkLeaf_q, nonce_q)).
+
+query sid_q: bitstring, pkLeaf_q: pkey, nonce_q: bitstring;
+  event(ClientAcceptsLegacy(service, sid_q, pkLeaf_q, nonce_q))
+  ==> event(LegacyServerBindsSameChannel(sid_q, service, pkLeaf_q, nonce_q)).
+
+process
+  (!LegacyServer) | (!LegacyClient)
