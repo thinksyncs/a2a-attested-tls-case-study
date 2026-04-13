@@ -83,6 +83,10 @@ resolve same-endpoint authenticity under the explicit leakage assumption used
 by the relay models, while the current verifier additionally exposes
 canonical exporter-label acceptance and a weaker missing-attestation-after-offer
 issue.
+For authenticated AI infrastructure, there is also a separate identity
+question beyond channel ownership alone: an accepted peer may still need to be
+distinguished from another co-resident AI agent or local stand-in on the same
+attested machine.
 
 Across the workspace, Go-language regressions act as implementation anchors for
 concrete verifier behavior. Tamarin is used for request/offer gating,
@@ -558,6 +562,10 @@ possession of the attested key. Under the explicit leakage assumption used
 here, that likely requires either a stronger non-exportability assumption for
 the attested key material or an additional non-transferable channel-bound
 proof that a relay attacker cannot replay from a different endpoint.
+Even that would still leave a separate AI-agent identity question. In a
+multi-agent machine, proving the exact live channel is not yet the same thing
+as proving that the accepted peer is the intended agent rather than another
+co-resident agent or local stand-in using the same attested machine.
 
 \subsection{Canonical Exporter-Label Enforcement}
 
@@ -624,6 +632,8 @@ also leaves a short list of concrete follow-up checks:
 \begin{enumerate}
 \item how to guarantee same-endpoint authenticity even under the explicit
 leakage assumption used by the relay models,
+\item how to distinguish the intended remote AI agent from another
+co-resident agent or local stand-in on the same attested machine,
 \item whether canonical exporter-label enforcement can be made fail-closed in
 the verifier,
 \item whether missing attestation after an explicit offer is blocked
@@ -644,9 +654,11 @@ same-endpoint authenticity on the relay question modeled here. The current
 verifier path also exposes additional problems beyond
 that published relay-aligned concern, most clearly in canonical
 exporter-label enforcement and more weakly in missing attestation after
-offer. Together with the narrower leaf-key and session-scoped replay results,
-this makes the workspace a scoped, reproducible starting point for further
-checking rather than a complete endpoint-verification story.
+offer. More broadly, attested machine identity is not yet the same thing as
+intended AI-agent identity on that machine. Together with the narrower
+leaf-key and session-scoped replay results, this makes the workspace a scoped,
+reproducible starting point for further checking rather than a complete
+endpoint-verification story.
 
 \section*{References}
 
