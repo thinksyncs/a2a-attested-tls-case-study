@@ -566,6 +566,8 @@ Even that would still leave a separate AI-agent identity question. In a
 multi-agent machine, proving the exact live channel is not yet the same thing
 as proving that the accepted peer is the intended agent rather than another
 co-resident agent or local stand-in using the same attested machine.
+Even same-endpoint authenticity would still not by itself establish intended
+agent identity or role authorization.
 
 \subsection{Canonical Exporter-Label Enforcement}
 
@@ -655,7 +657,9 @@ verifier path also exposes additional problems beyond
 that published relay-aligned concern, most clearly in canonical
 exporter-label enforcement and more weakly in missing attestation after
 offer. More broadly, attested machine identity is not yet the same thing as
-intended AI-agent identity on that machine. Together with the narrower
+intended AI-agent identity on that machine, and same-endpoint authenticity
+would still not by itself establish intended-agent identity or role
+authorization. Together with the narrower
 leaf-key and session-scoped replay results, this makes the workspace a scoped,
 reproducible starting point for further checking rather than a complete
 endpoint-verification story.
