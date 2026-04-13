@@ -61,6 +61,9 @@ Legacy-design model:
 The Tamarin side is strongest on gating, presence/absence conditions, and
 session-style reuse behavior. In this workspace it also provides a same-endpoint
 attack trace under the explicit leakage assumption used by the relay analysis.
+In the current same-endpoint model, `ServerControlsLiveEndpoint` is emitted
+only when the honest server receives and answers a live challenge on a specific
+channel.
 
 The current models therefore show a split:
 

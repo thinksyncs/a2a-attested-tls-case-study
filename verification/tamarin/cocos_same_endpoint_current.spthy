@@ -25,15 +25,21 @@ rule Server_Issues_Attestation:
   [ !Pk($S, pkS),
     In(<$C, $S, chan, ctx>),
     Fr(~esk) ]
-  --[ ServerIssuesAttestation($S, ctx, pk(~esk)),
-      ServerControlsLiveEndpoint($S, chan, pk(~esk)) ]->
-  [ St_S($S, chan, ctx, ~esk),
+  --[ ServerIssuesAttestation($S, ctx, pk(~esk)) ]->
+  [ St_S_Leak($S, chan, ctx, ~esk),
+    St_S_Resp($S, chan, ctx, ~esk),
     Out(<$S, $C, ctx, pk(~esk), signed_att(attest(ctx, pk(~esk)), $S)>) ]
 
 rule Leak_Ephemeral_Key:
-  [ St_S($S, chan, ctx, esk) ]
+  [ St_S_Leak($S, chan, ctx, esk) ]
   --[ EphemeralKeyLeaked($S, chan, pk(esk)) ]->
   [ Out(esk) ]
+
+rule Server_Responds_On_Live_Channel:
+  [ St_S_Resp($S, chan, ctx, esk),
+    In(<chan, cterm>) ]
+  --[ ServerControlsLiveEndpoint($S, chan, pk(esk)) ]->
+  [ Out(resp(pk(esk), cterm)) ]
 
 rule Client_Sends_Challenge:
   [ St_C_Req($C, $S, chan, ctx),

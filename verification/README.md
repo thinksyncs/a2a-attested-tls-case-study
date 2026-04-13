@@ -1,7 +1,7 @@
 # Verification Workspace
 
-This directory collects the formal verification artifacts bundled with the
-public case-study repository.
+This directory collects the machine-checked verification artifacts bundled with
+the public case-study repository.
 
 ## What is here
 
@@ -36,6 +36,10 @@ Expected highlights:
 - `plain_requests_do_not_produce_attested_acceptance` is verified
 - `accepted_attestation_must_use_default_exporter_label` is falsified
 - `offered_requests_must_not_succeed_without_attestation` is falsified
+- `received_attestation_has_server_origin` is verified
+- `same_endpoint_can_fail_under_leakage` yields a verified attack trace
+- `session_context_is_one_shot` is verified
+- `no_session_replay_exists` yields a verified replay trace
 
 ### 2. ProVerif
 
@@ -45,13 +49,16 @@ verification/run-proverif.sh
 
 Expected highlights:
 
+- `ClientAccepts ==> ClientSendsEARequest` is `true`
 - `ClientAccepts ==> ServerIssuesAttestation` is `true`
+- `ClientAccepts ==> ServerBuildsAuthenticator` is `false`
 - `ClientAccepts ==> ServerBindsSameChannel` is `false`
 - `ClientAccepts ==> ServerUsesCanonicalLabel` is `false`
 - `ClientAccepts ==> ServerAttestsLeafKey` is `true`
 - `ClientAcceptsLegacy ==> ClientRequestsEvidence` is `true`
 - `ClientAcceptsLegacy ==> ServerIssuesLegacyAttestation` is `true`
 - `ClientAcceptsLegacy ==> ServerCreatesLegacyReport` is `true`
+- `ClientAcceptsLegacy ==> LegacyServerBindsSameChannel` is `false`
 
 ## Notes
 
