@@ -1,0 +1,104 @@
+theory Cocos_Agent_Identity_Bound_Current
+begin
+
+/* Mitigation sketch:
+   - the machine attestation names the intended agent explicitly
+   - the live response is tagged with that intended-agent identity
+   The load-bearing check in this file is the absence of a wrong-agent
+   acceptance trace on the same attested machine. */
+
+functions:
+  c_chan/0,
+  intended_agent/0,
+  other_agent/0,
+  pk/1,
+  attest/4,
+  signed_att/2 [private],
+  chall/2,
+  resp/3 [private]
+
+rule Register_Machine:
+  [ Fr(~ltkM) ]
+  -->
+  [ !Pk($M, pk(~ltkM)) ]
+
+rule Register_Intended_Agent:
+  [ Fr(~skI) ]
+  -->
+  [ St_Intended_Key($M, intended_agent, ~skI) ]
+
+rule Register_Other_Agent:
+  [ Fr(~skO) ]
+  -->
+  [ !AgentPk($M, other_agent, pk(~skO)),
+    St_Other_Key($M, other_agent, ~skO) ]
+
+rule Client_Targets_Intended_Agent:
+  [ Fr(~ctx) ]
+  --[ ClientTargetsAgent($C, $M, intended_agent, c_chan, ~ctx) ]->
+  [ St_C_Req($C, $M, intended_agent, c_chan, ~ctx),
+    Out(<$C, $M, intended_agent, c_chan, ~ctx>) ]
+
+rule Machine_Issues_Bound_Attestation:
+  [ !Pk($M, pkM),
+    In(<$C, $M, intended_agent, chan, ctx>),
+    St_Intended_Key($M, intended_agent, skI),
+    St_Other_Key($M, other_agent, skO) ]
+  --[ MachineIssuesBoundAttestation($M, intended_agent, ctx, pk(skI)) ]->
+  [ St_Intended_Resp($M, intended_agent, chan, ctx, skI),
+    St_Other_Resp($M, other_agent, chan, ctx, skO),
+    Out(<$M, $C, intended_agent, ctx, pk(skI),
+         signed_att(attest($M, intended_agent, ctx, pk(skI)), $M)>) ]
+
+rule Client_Sends_Challenge:
+  [ St_C_Req($C, $M, intended_agent, chan, ctx),
+    In(<$M, $C, intended_agent, ctx, pkI,
+        signed_att(attest($M, intended_agent, ctx, pkI), $M)>),
+    Fr(~n) ]
+  --[ ClientReceivesBoundAttestation($C, $M, intended_agent, chan, ctx, pkI) ]->
+  [ St_C_Wait($C, $M, intended_agent, chan, ctx, pkI, chall(chan, ~n)),
+    Out(<chan, chall(chan, ~n)>) ]
+
+rule Intended_Agent_Responds:
+  [ St_Intended_Resp($M, intended_agent, chan, ctx, skI),
+    In(<chan, cterm>) ]
+  --[ IntendedAgentResponded($M, intended_agent, chan, pk(skI)) ]->
+  [ Out(resp(intended_agent, pk(skI), cterm)) ]
+
+rule Other_Agent_Responds:
+  [ St_Other_Resp($M, other_agent, chan, ctx, skO),
+    In(<chan, cterm>) ]
+  --[ OtherAgentResponded($M, other_agent, chan, pk(skO)) ]->
+  [ Out(resp(other_agent, pk(skO), cterm)) ]
+
+rule Client_Verifies_Bound_Response:
+  [ St_C_Wait($C, $M, intended_agent, chan, ctx, pkI, cterm),
+    In(resp(intended_agent, pkI, cterm)) ]
+  --[ ClientAcceptsIntendedAgent($C, $M, intended_agent, chan, ctx, pkI) ]->
+  [ ]
+
+lemma received_bound_attestation_has_machine_origin:
+  "All C M A chan ctx pkI #i.
+    ClientReceivesBoundAttestation(C, M, A, chan, ctx, pkI) @ i
+    ==>
+      (Ex #j. MachineIssuesBoundAttestation(M, A, ctx, pkI) @ j & j < i)"
+
+lemma acceptance_requires_intended_agent_response:
+  "All C M chan ctx pkI #i.
+    ClientAcceptsIntendedAgent(C, M, intended_agent, chan, ctx, pkI) @ i
+    ==>
+      (Ex #j.
+        IntendedAgentResponded(M, intended_agent, chan, pkI) @ j & j < i)"
+
+lemma wrong_agent_identity_can_fail_on_same_machine:
+  exists-trace
+  "Ex C M ctx pkI #i #j #k.
+    ClientTargetsAgent(C, M, intended_agent, c_chan, ctx) @ i
+    &
+    OtherAgentResponded(M, other_agent, c_chan, pkI) @ j
+    &
+    ClientAcceptsIntendedAgent(C, M, intended_agent, c_chan, ctx, pkI) @ k
+    &
+    not (Ex #l. IntendedAgentResponded(M, intended_agent, c_chan, pkI) @ l)"
+
+end

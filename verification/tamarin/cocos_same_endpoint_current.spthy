@@ -8,7 +8,7 @@ functions:
   attest/2,
   signed_att/2 [private],
   chall/2,
-  resp/2
+  resp/2 [private]
 
 rule Register_Server:
   [ Fr(~ltkS) ]

@@ -14,7 +14,7 @@ the public case-study repository.
   legacy/current comparison points
 
 The implementation-level Go regressions discussed in the report are not bundled
-here. This public repository keeps the formal models and the report itself as a
+here. This public repository keeps the verification models and the report itself as a
 standalone artifact set for sharing and rerunning.
 
 ## Quick start
@@ -38,6 +38,10 @@ Expected highlights:
 - `offered_requests_must_not_succeed_without_attestation` is falsified
 - `received_attestation_has_server_origin` is verified
 - `same_endpoint_can_fail_under_leakage` yields a verified attack trace
+- `received_machine_attestation_has_machine_origin` is verified
+- `intended_agent_identity_can_fail_on_same_machine` yields a verified attack trace
+- `received_bound_attestation_has_machine_origin` is verified
+- `wrong_agent_identity_can_fail_on_same_machine` is falsified with no trace found
 - `session_context_is_one_shot` is verified
 - `no_session_replay_exists` yields a verified replay trace
 

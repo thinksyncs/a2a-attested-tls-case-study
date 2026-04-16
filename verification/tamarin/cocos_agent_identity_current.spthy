@@ -1,0 +1,74 @@
+theory Cocos_Agent_Identity_Current
+begin
+
+functions:
+  c_chan/0,
+  intended_agent/0,
+  other_agent/0,
+  pk/1,
+  attest/3,
+  signed_att/2 [private],
+  chall/2,
+  resp/2 [private]
+
+rule Register_Machine:
+  [ Fr(~ltkM) ]
+  -->
+  [ !Pk($M, pk(~ltkM)) ]
+
+rule Client_Targets_Intended_Agent:
+  [ Fr(~ctx) ]
+  --[ ClientTargetsAgent($C, $M, intended_agent, c_chan, ~ctx) ]->
+  [ St_C_Req($C, $M, intended_agent, c_chan, ~ctx),
+    Out(<$C, $M, intended_agent, c_chan, ~ctx>) ]
+
+rule Machine_Issues_Attestation:
+  [ !Pk($M, pkM),
+    In(<$C, $M, intended_agent, chan, ctx>),
+    Fr(~esk) ]
+  --[ MachineIssuesAttestation($M, ctx, pk(~esk)) ]->
+  [ St_Intended($M, intended_agent, chan, ctx, ~esk),
+    St_Other($M, other_agent, chan, ctx, ~esk),
+    Out(<$M, $C, ctx, pk(~esk), signed_att(attest($M, ctx, pk(~esk)), $M)>) ]
+
+rule Client_Sends_Challenge:
+  [ St_C_Req($C, $M, intended_agent, chan, ctx),
+    In(<$M, $C, ctx, pkE, signed_att(attest($M, ctx, pkE), $M)>),
+    Fr(~n) ]
+  --[ ClientReceivesMachineAttestation($C, $M, intended_agent, chan, ctx, pkE) ]->
+  [ St_C_Wait($C, $M, intended_agent, chan, ctx, pkE, chall(chan, ~n)),
+    Out(<chan, chall(chan, ~n)>) ]
+
+rule Intended_Agent_Responds:
+  [ St_Intended($M, intended_agent, chan, ctx, esk),
+    In(<chan, cterm>) ]
+  --[ IntendedAgentResponded($M, intended_agent, chan, pk(esk)) ]->
+  [ Out(resp(pk(esk), cterm)) ]
+
+rule Other_Agent_Responds:
+  [ St_Other($M, other_agent, chan, ctx, esk),
+    In(<chan, cterm>) ]
+  --[ OtherAgentResponded($M, other_agent, chan, pk(esk)) ]->
+  [ Out(resp(pk(esk), cterm)) ]
+
+rule Client_Verifies_Response:
+  [ St_C_Wait($C, $M, intended_agent, chan, ctx, pkE, cterm),
+    In(resp(pkE, cterm)) ]
+  --[ ClientAcceptsIntendedAgent($C, $M, intended_agent, chan, ctx, pkE) ]->
+  [ ]
+
+lemma received_machine_attestation_has_machine_origin:
+  "All C M A chan ctx pkE #i.
+    ClientReceivesMachineAttestation(C, M, A, chan, ctx, pkE) @ i
+    ==>
+      (Ex #j. MachineIssuesAttestation(M, ctx, pkE) @ j & j < i)"
+
+lemma intended_agent_identity_can_fail_on_same_machine:
+  exists-trace
+  "Ex C M ctx pkE #i #j #k.
+    ClientTargetsAgent(C, M, intended_agent, c_chan, ctx) @ i
+    & OtherAgentResponded(M, other_agent, c_chan, pkE) @ j
+    & ClientAcceptsIntendedAgent(C, M, intended_agent, c_chan, ctx, pkE) @ k
+    & not(Ex #l. IntendedAgentResponded(M, intended_agent, c_chan, pkE) @ l)"
+
+end

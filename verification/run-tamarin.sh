@@ -17,5 +17,13 @@ tamarin-prover --prove=received_attestation_has_server_origin verification/tamar
 tamarin-prover --prove=same_endpoint_can_fail_under_leakage verification/tamarin/cocos_same_endpoint_current.spthy
 
 echo
+echo "== cocos_agent_identity_current.spthy =="
+tamarin-prover --prove verification/tamarin/cocos_agent_identity_current.spthy
+
+echo
+echo "== cocos_agent_identity_bound_current.spthy =="
+tamarin-prover --prove verification/tamarin/cocos_agent_identity_bound_current.spthy
+
+echo
 echo "== cocos_context_reuse_current.spthy =="
 tamarin-prover --prove verification/tamarin/cocos_context_reuse_current.spthy

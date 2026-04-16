@@ -14,7 +14,8 @@ navigate a larger development fork.
   the PDF report, its LaTeX source, and the local build script
 - `verification/tamarin/`
   Tamarin models for legacy/current gating, attestation presence,
-  exporter-label enforcement, same-endpoint attack trace, and context reuse
+  exporter-label enforcement, same-endpoint attack trace, same-machine
+  intended-agent identity, and context reuse
 - `verification/proverif/`
   ProVerif models for relay/diversion, same-endpoint authenticity,
   canonical exporter-label enforcement, leaf-key substitution, and compact
@@ -68,7 +69,8 @@ Run the ProVerif models:
   `e372cfc` with a current post-handshake design anchor around commit
   `80bf813`.
 - The main current-design results are about same-endpoint authenticity,
-  canonical exporter-label enforcement, missing attestation after offer,
-  leaf-key substitution, and session-scoped context reuse.
+  same-machine intended-agent identity, canonical exporter-label
+  enforcement, missing attestation after offer, leaf-key substitution, and
+  session-scoped context reuse.
 - The relay/diversion results are design-level and rely on the explicit
   leakage assumption stated in the report.
