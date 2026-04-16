@@ -86,7 +86,9 @@ issue.
 For authenticated AI infrastructure, there is also a separate identity
 question beyond channel ownership alone: an accepted peer may still need to be
 distinguished from another co-resident AI agent or local stand-in on the same
-attested machine.
+attested machine. The current Tamarin models now expose that same-machine
+wrong-agent trace directly and also include a narrow intended-agent-bound
+mitigation sketch in which that trace disappears.
 
 Across the workspace, Go-language regressions act as implementation anchors for
 concrete verifier behavior. Tamarin is used for request/offer gating,
@@ -334,6 +336,7 @@ mirror.
 \midrule
 Redesign effect on same-endpoint authenticity & legacy ProVerif + current ProVerif + current Tamarin\footnotemark & not resolved by the post-handshake redesign under the explicit leakage assumption & message placement changed, but live-channel binding remains unestablished \\
 Relay/diversion risk reported in CVE-2026-33697~\cite{ghsa-cve,nvd-cve,osv-cve} & current ProVerif + current Tamarin attack trace & accepted origin persists, but same-endpoint authenticity fails under leakage & CVE-aligned design-level concern, not a full exploit proof \\
+Same-machine intended-agent identity & current Tamarin + intended-agent-bound mitigation sketch & machine-level attestation alone does not distinguish the intended agent; the mitigation sketch removes that trace in this abstraction & attested machine identity is still not intended-agent identity \\
 Canonical exporter-label enforcement & Go regression + falsified Tamarin lemma + ProVerif correspondence & canonical-label enforcement fails in current verifier behavior & strongest additional finding in this workspace \\
 Missing attestation after offer & Go regression + falsified Tamarin lemma & API-level acceptance remains possible after an explicit offer & weaker; end-to-end exploitability is not established here \\
 \bottomrule
@@ -424,6 +427,21 @@ In that model,
 \texttt{no\_session\_replay\_exists} has a verified replay trace. This is meant
 to track the semantics of \texttt{ea.Session}; it should not be read as a claim
 that every current-design validation path is automatically one-shot.
+
+A second pair of current-design Tamarin models checks a different identity
+gap: whether machine-level attestation can distinguish the intended AI agent
+from another co-resident agent on the same attested machine.\footnote{\path{verification/tamarin/cocos_agent_identity_current.spthy};
+\path{verification/tamarin/cocos_agent_identity_bound_current.spthy}}
+In the unbound model,
+\texttt{received\_machine\_attestation\_has\_machine\_origin} is verified and
+\texttt{intended\_agent\_identity\_can\_fail\_on\_same\_machine} has a verified
+attack trace. In the mitigation sketch, the attestation explicitly names the
+intended agent and the live response is checked as intended-agent-bound; there,
+\texttt{received\_bound\_attestation\_has\_machine\_origin} is verified and
+\texttt{wrong\_agent\_identity\_can\_fail\_on\_same\_machine} is falsified with
+no trace found. This remains a narrow design sketch, but it does show that, in
+this abstraction, binding both the attestation and the live response to the
+intended agent removes the co-resident-agent confusion trace.
 
 \subsection{ProVerif Results}
 
@@ -569,6 +587,22 @@ co-resident agent or local stand-in using the same attested machine.
 Even same-endpoint authenticity would still not by itself establish intended
 agent identity or role authorization.
 
+\subsection{Same-machine intended-agent identity}
+
+The new Tamarin agent-identity models make that AI-specific gap concrete. In
+the unbound machine-level model, a client can target one intended agent and
+still accept a response produced by another co-resident agent on the same
+attested machine. This means that machine identity alone is not yet intended
+agent identity.
+
+The mitigation sketch is deliberately narrow, but still useful. In that model,
+the attestation explicitly names the intended agent and the live response is
+accepted only in an intended-agent-bound form. Under that abstraction, the
+direct wrong-agent trace disappears. This should not yet be read as a complete
+deployment recipe, but it is a positive signal that agent-bound attestation
+plus agent-bound live proof is a plausible direction for closing the
+same-machine stand-in risk.
+
 \subsection{Canonical Exporter-Label Enforcement}
 
 The canonical exporter-label issue is the strongest additional finding in this
@@ -635,7 +669,10 @@ also leaves a short list of concrete follow-up checks:
 \item how to guarantee same-endpoint authenticity even under the explicit
 leakage assumption used by the relay models,
 \item how to distinguish the intended remote AI agent from another
-co-resident agent or local stand-in on the same attested machine,
+\item how to distinguish the intended remote AI agent from another
+co-resident agent or local stand-in on the same attested machine, and whether
+the intended-agent-bound mitigation sketch can be turned into a stronger
+protocol guarantee,
 \item whether canonical exporter-label enforcement can be made fail-closed in
 the verifier,
 \item whether missing attestation after an explicit offer is blocked
@@ -659,7 +696,10 @@ exporter-label enforcement and more weakly in missing attestation after
 offer. More broadly, attested machine identity is not yet the same thing as
 intended AI-agent identity on that machine, and same-endpoint authenticity
 would still not by itself establish intended-agent identity or role
-authorization. Together with the narrower
+authorization. The new Tamarin agent-identity models also suggest that
+machine-level attestation alone leaves room for a same-machine wrong-agent
+stand-in, while an intended-agent-bound sketch can remove that trace in this
+abstraction. Together with the narrower
 leaf-key and session-scoped replay results, this makes the workspace a scoped,
 reproducible starting point for further checking rather than a complete
 endpoint-verification story.
@@ -736,9 +776,10 @@ Current missing attestation after explicit offer & \statusna & \statuschecked \\
 Extension placement / certificate-entry confusion & \statusnotyet & \statuschecked \\
 Canonical exporter-label enforcement & \statusna & \statuschecked \\
 Relay / same-endpoint authenticity under leakage & \statuschecked & \statuschecked \\
+Same-machine intended-agent identity & \statusna & \statuschecked \\
 \bottomrule
 \end{tabularx}
-\caption{Workspace coverage across legacy and current Cocos AI aTLS designs. Here, ``checked'' means that the question is directly exercised by a test or formal model result in this workspace; it does not imply that the answer is always positive. The strongest current-design signals are freshness-token binding, certificate/public-key substitution, missing-attestation handling, canonical exporter-label enforcement, and relay / same-endpoint authenticity under the explicit leakage assumption. The strongest legacy-design signals are request-gated acceptance, nonce/public-key binding, and a legacy-side relay / same-endpoint comparison under leakage, with \texttt{NO\_TEE} fail-closed handling retained as a narrower implementation condition.}
+\caption{Workspace coverage across legacy and current Cocos AI aTLS designs. Here, ``checked'' means that the question is directly exercised by a test or formal model result in this workspace; it does not imply that the answer is always positive. The strongest current-design signals are freshness-token binding, certificate/public-key substitution, missing-attestation handling, canonical exporter-label enforcement, relay / same-endpoint authenticity under the explicit leakage assumption, and same-machine intended-agent identity. The strongest legacy-design signals are request-gated acceptance, nonce/public-key binding, and a legacy-side relay / same-endpoint comparison under leakage, with \texttt{NO\_TEE} fail-closed handling retained as a narrower implementation condition.}
 \label{tab:matrix}
 \end{table}
 
