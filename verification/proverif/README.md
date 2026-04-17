@@ -71,8 +71,10 @@ The current models separate two ideas:
 - accepted attestation still tracks genuine server-side attestation origin
 - accepted attestation does not by itself establish same-endpoint authenticity
 
-That is the main reason these models were added: they express the relay /
-same-endpoint question more directly than the earlier Tamarin model.
+Read together with the compact legacy comparison models, they also show that
+moving from the legacy pre-handshake design to the current post-handshake
+design does not by itself resolve same-endpoint authenticity under the explicit
+leakage assumption used by the relay models.
 
 ## Scope
 

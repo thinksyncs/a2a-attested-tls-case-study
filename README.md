@@ -72,5 +72,8 @@ Run the ProVerif models:
   same-machine intended-agent identity, canonical exporter-label
   enforcement, missing attestation after offer, leaf-key substitution, and
   session-scoped context reuse.
+- The same-machine agent-identity result is paired with a narrow
+  intended-agent-bound mitigation sketch in which that direct wrong-agent
+  trace is no longer found in the current Tamarin abstraction.
 - The relay/diversion results are design-level and rely on the explicit
   leakage assumption stated in the report.

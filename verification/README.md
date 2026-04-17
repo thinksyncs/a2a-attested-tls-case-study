@@ -37,13 +37,13 @@ Expected highlights:
 - `accepted_attestation_must_use_default_exporter_label` is falsified
 - `offered_requests_must_not_succeed_without_attestation` is falsified
 - `received_attestation_has_server_origin` is verified
-- `same_endpoint_can_fail_under_leakage` yields a verified attack trace
+- `same_endpoint_can_fail_under_leakage` yields an attack trace
 - `received_machine_attestation_has_machine_origin` is verified
-- `intended_agent_identity_can_fail_on_same_machine` yields a verified attack trace
+- `intended_agent_identity_can_fail_on_same_machine` yields an attack trace
 - `received_bound_attestation_has_machine_origin` is verified
-- `wrong_agent_identity_can_fail_on_same_machine` is falsified with no trace found
+- `wrong_agent_identity_can_fail_on_same_machine` has no trace found
 - `session_context_is_one_shot` is verified
-- `no_session_replay_exists` yields a verified replay trace
+- `no_session_replay_exists` yields a replay trace
 
 ### 2. ProVerif
 
@@ -68,6 +68,10 @@ Expected highlights:
 
 - The scripts expect `tamarin-prover`, `opam`, and `proverif` to be available
   in `PATH`.
+- In the Tamarin models, `verified` and `falsified` do not always line up with
+  `good` and `bad`. For attack-trace lemmas, the important question is whether
+  a trace is found. The report uses `trace found` and `no trace found` wording
+  for those rows.
 - If `opam` is not yet initialized in another environment, run:
 
 ```sh

@@ -48,23 +48,23 @@ Current-design attestation model:
 Current-design same-endpoint model:
 
 - `received_attestation_has_server_origin` is `verified`
-- `same_endpoint_can_fail_under_leakage` yields a verified attack trace
+- `same_endpoint_can_fail_under_leakage` yields an attack trace
 
 Current-design context reuse model:
 
 - `session_acceptance_has_server_origin` is `verified`
 - `session_context_is_one_shot` is `verified`
-- `no_session_replay_exists` yields a verified replay trace
+- `no_session_replay_exists` yields a replay trace
 
 Current-design same-machine agent-identity model:
 
 - `received_machine_attestation_has_machine_origin` is `verified`
-- `intended_agent_identity_can_fail_on_same_machine` yields a verified attack trace
+- `intended_agent_identity_can_fail_on_same_machine` yields an attack trace
 
 Current-design intended-agent-bound mitigation sketch:
 
 - `received_bound_attestation_has_machine_origin` is `verified`
-- `wrong_agent_identity_can_fail_on_same_machine` is `falsified` with no trace found
+- `wrong_agent_identity_can_fail_on_same_machine` has no trace found
 
 Legacy-design model:
 
@@ -90,6 +90,9 @@ The current models therefore show a split:
   same-machine wrong-agent trace in this abstraction
 - one-shot request-context behavior only holds for the explicit session-tracking
   path
+
+For attack-trace lemmas, the important outcome is whether Tamarin finds a
+trace, not only whether the lemma is printed as `verified` or `falsified`.
 
 ## Scope
 
