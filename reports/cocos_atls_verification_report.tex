@@ -30,6 +30,8 @@
 \newcommand{\resultfalsified}{\colorbox{riskred}{\strut falsified}}
 \newcommand{\resulttrue}{\colorbox{statusgreen}{\strut true}}
 \newcommand{\resultfalse}{\colorbox{riskred}{\strut false}}
+\newcommand{\resulttracefound}{\colorbox{riskred}{\strut trace found}}
+\newcommand{\resultnotrace}{\colorbox{statusgreen}{\strut no trace found}}
 
 \hypersetup{
   colorlinks=true,
@@ -400,11 +402,11 @@ Offer-gated acceptance & A successful acceptance must be preceded by a client at
 No attested acceptance from plain mode & Plain requests do not lead to attested acceptance. & \resultverified \\
 Canonical exporter-label enforcement & Accepted attestations should only use the canonical exporter label. & \resultfalsified \\
 No success without attestation after offer & An offered request should not succeed when the attestation extension is missing. & \resultfalsified \\
-Same-endpoint failure under leakage & Under the explicit leakage assumption, there exists a client-accepted session that does not establish same-endpoint authenticity. & \resultverified \\
+Same-endpoint failure under leakage & Under the explicit leakage assumption, there exists a client-accepted session that does not establish same-endpoint authenticity. & \resulttracefound \\
 Session-scoped one-shot context use & With explicit session tracking, the same request context cannot be accepted twice. & \resultverified \\
-Replay without session tracking & Without session tracking, there exists a replay trace for the same request context. & \resultverified \\
-Wrong-agent trace on the same machine & There exists a client acceptance of the intended agent that is satisfied by another co-resident agent on the same attested machine. & \resultverified \\
-Wrong-agent trace under intended-agent-bound mitigation & Under the intended-agent-bound mitigation sketch, that same-machine wrong-agent trace is no longer found. & \resultfalsified \\
+Replay without session tracking & Without session tracking, there exists a replay trace for the same request context. & \resulttracefound \\
+Wrong-agent trace on the same machine & There exists a client acceptance of the intended agent that is satisfied by another co-resident agent on the same attested machine. & \resulttracefound \\
+Wrong-agent trace under intended-agent-bound mitigation & Under the intended-agent-bound mitigation sketch, that same-machine wrong-agent trace is no longer found. & \resultnotrace \\
 \bottomrule
 \end{tabularx}
 \caption{Summary of current-design Tamarin results across the current models.}
