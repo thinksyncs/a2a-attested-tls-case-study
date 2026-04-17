@@ -322,7 +322,7 @@ mirror.
 \node[sidenote, fill=flowblue, draw=flowborder] at (12.95,-7.95)
   {\textbf{Design note:} the authenticator carries the certificate chain and attestation payload as a post-handshake response.};
 \end{tikzpicture}
-\caption{Current post-handshake exported-authenticator flow. Blue boxes are protocol steps; green notes mark values explicitly bound into the attestation binder.}
+\caption{Current post-handshake exported-authenticator flow. Blue boxes show protocol steps; green notes show values explicitly bound into the attestation binder.}
 \label{fig:current-flow}
 \end{figure}
 
@@ -397,19 +397,19 @@ request-context usage.
 \toprule
 \textbf{Property} & \textbf{Meaning} & \textbf{Result} \\
 \midrule
-Server-origin authenticity & An attested client acceptance must correspond to a server-side authenticator creation event. & \resultverified \\
-Offer-gated acceptance & A successful acceptance must be preceded by a client attestation offer. & \resultverified \\
-No attested acceptance from plain mode & Plain requests do not lead to attested acceptance. & \resultverified \\
-Canonical exporter-label enforcement & Accepted attestations should only use the canonical exporter label. & \resultfalsified \\
-No success without attestation after offer & An offered request should not succeed when the attestation extension is missing. & \resultfalsified \\
-Same-endpoint failure under leakage & Under the explicit leakage assumption, there exists a client-accepted session that does not establish same-endpoint authenticity. & \resulttracefound \\
-Session-scoped one-shot context use & With explicit session tracking, the same request context cannot be accepted twice. & \resultverified \\
-Replay without session tracking & Without session tracking, there exists a replay trace for the same request context. & \resulttracefound \\
-Wrong-agent trace on the same machine & There exists a client acceptance of the intended agent that is satisfied by another co-resident agent on the same attested machine. & \resulttracefound \\
-Wrong-agent trace under intended-agent-bound mitigation & Under the intended-agent-bound mitigation sketch, that same-machine wrong-agent trace is no longer found. & \resultnotrace \\
+(1) Server-origin authenticity & An attested client acceptance must correspond to a server-side authenticator creation event. & \resultverified \\
+(2) Offer-gated acceptance & A successful acceptance must be preceded by a client attestation offer. & \resultverified \\
+(3) No attested acceptance from plain mode & Plain requests do not lead to attested acceptance. & \resultverified \\
+(4) Canonical exporter-label enforcement & Accepted attestations should only use the canonical exporter label. & \resultfalsified \\
+(5) No success without attestation after offer & An offered request should not succeed when the attestation extension is missing. & \resultfalsified \\
+(6) Same-endpoint failure under leakage & Under the explicit leakage assumption, there exists a client-accepted session that does not establish same-endpoint authenticity. & \resulttracefound \\
+(7) Session-scoped one-shot context use & With explicit session tracking, the same request context cannot be accepted twice. & \resultverified \\
+(8) Replay without session tracking & Without session tracking, there exists a replay trace for the same request context. & \resulttracefound \\
+(9) Wrong-agent trace on the same machine & A client acceptance of the intended agent can still be satisfied by another co-resident agent on the same attested machine. & \resulttracefound \\
+(10) Wrong-agent trace under intended-agent-bound mitigation & Under the intended-agent-bound sketch, that same-machine wrong-agent trace is no longer found. & \resultnotrace \\
 \bottomrule
 \end{tabularx}
-\caption{Summary of current-design Tamarin results across the current models.}
+\caption{Summary of current-design Tamarin results across the current models. File mapping under \texttt{verification/tamarin/}: (1)--(5) \texttt{cocos\_attestation.spthy}; (6) \texttt{cocos\_same\_endpoint\_current.spthy}; (7)--(8) \texttt{cocos\_context\_reuse\_current.spthy}; (9) \texttt{cocos\_agent\_identity\_current.spthy}; (10) \texttt{cocos\_agent\_identity\_bound\_current.spthy}.}
 \label{tab:tamarin-current}
 \end{table}
 
@@ -439,16 +439,12 @@ A second pair of current-design Tamarin models checks a different identity
 gap: whether machine-level attestation can distinguish the intended AI agent
 from another co-resident agent on the same attested machine.\footnote{\path{verification/tamarin/cocos_agent_identity_current.spthy};
 \path{verification/tamarin/cocos_agent_identity_bound_current.spthy}}
-In the unbound model,
-\texttt{received\_machine\_attestation\_has\_machine\_origin} is verified and
-\texttt{intended\_agent\_identity\_can\_fail\_on\_same\_machine} has a verified
-attack trace. In the mitigation sketch, the attestation explicitly names the
-intended agent and the live response is checked as intended-agent-bound; there,
-\texttt{received\_bound\_attestation\_has\_machine\_origin} is verified and
-\texttt{wrong\_agent\_identity\_can\_fail\_on\_same\_machine} is falsified with
-no trace found. This remains a narrow design sketch, but it does show that, in
-this abstraction, binding both the attestation and the live response to the
-intended agent removes the co-resident-agent confusion trace.
+The unbound model verifies machine origin and yields a wrong-agent attack
+trace on the same machine. The mitigation sketch also verifies machine origin,
+but the same wrong-agent trace is no longer found. This remains a narrow
+design sketch, but in this abstraction it shows that binding both the
+attestation and the live response to the intended agent removes the
+co-resident-agent confusion trace.
 
 \subsection{ProVerif Results}
 
@@ -476,33 +472,33 @@ explicitly by leakage of the ephemeral private key after attestation issuance.
 \toprule
 \textbf{Model thread} & \textbf{Correspondence query} & \textbf{Result} & \textbf{Interpretation} \\
 \midrule
-Request-gated acceptance &
+(1) Request-gated acceptance &
 \texttt{ClientAccepts ==> ClientSendsEARequest} &
 \resulttrue{} &
 Acceptance still implies a prior client-side exported-authenticator request. \\
-Server-side attestation origin &
+(2) Server-side attestation origin &
 \texttt{ClientAccepts ==> ServerIssuesAttestation} &
 \resulttrue{} &
 Client acceptance still tracks genuine server-side attestation origin. \\
-Server-side binding/construction event &
+(3) Server-side binding/construction event &
 \texttt{ClientAccepts ==> ServerBuildsAuthenticator} &
 \resultfalse{} &
 Under the explicit leakage assumption, the current relay model does not preserve the same server-side channel/build event for an accepted client session. \\
-Relay / same-endpoint authenticity &
+(4) Relay / same-endpoint authenticity &
 \texttt{current: ClientAccepts ==> ServerBindsSameChannel} &
 \resultfalse{} &
 Under the explicit leakage assumption, the current relay model does not establish same-endpoint authenticity for a client-accepted session. \\
-Canonical exporter-label enforcement &
+(5) Canonical exporter-label enforcement &
 \texttt{current: ClientAccepts ==> ServerUsesCanonicalLabel} &
 \resultfalse{} &
 Acceptance does not imply that the canonical exporter label was used. \\
-Leaf-key substitution resistance &
+(6) Leaf-key substitution resistance &
 \texttt{current: ClientAccepts ==> ServerAttestsLeafKey} &
 \resulttrue{} &
 Within this abstraction, client acceptance remains tied to the attested leaf public key. \\
 \bottomrule
 \end{tabularx}
-\caption{Summary of the current-design ProVerif correspondence queries used in this workspace.}
+\caption{Summary of the current-design ProVerif correspondence queries used in this workspace. File mapping under \texttt{verification/proverif/}: (1)--(4) \texttt{cocos\_relay\_attack.pv}; (5) \texttt{cocos\_exporter\_label\_current.pv}; (6) \texttt{cocos\_leaf\_key\_substitution\_current.pv}.}
 \label{tab:proverif-results}
 \end{table}
 
@@ -864,7 +860,7 @@ Under the explicit leakage assumption, the legacy relay model does not establish
 \node[sidenote, fill=boundgreen, draw=boundborder] at (12.85,-6.8)
   {\textbf{Binding note:} the checked legacy binding in this workspace is the client nonce together with the leaf certificate public key.};
 \end{tikzpicture}
-\caption{Legacy pre-handshake flow. This appendix figure is included for comparison only; the main report keeps the legacy analysis intentionally compact. Blue boxes are protocol steps, and the green note marks the explicit binding checked in the legacy artifacts.}
+\caption{Legacy pre-handshake flow. This appendix figure is included only for comparison. Blue boxes show protocol steps, and the green note marks the explicit binding checked in the legacy artifacts.}
 \label{fig:legacy-flow-appendix}
 \end{figure}
 
