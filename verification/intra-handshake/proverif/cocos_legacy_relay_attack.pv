@@ -1,4 +1,5 @@
-(* Minimal ProVerif model for the legacy pre-handshake relay/diversion question.
+(* Minimal ProVerif model for the legacy pre-handshake relay-style
+   same-endpoint question.
 
    Intuition:
    - The client sends a fresh evidence request nonce in the handshake.

@@ -64,7 +64,7 @@ small machine-checked case study of Cocos AI aTLS~\cite{cocosrepo}. In this
 workspace, the legacy/current comparison already shows that moving to the
 post-handshake design does not by itself resolve same-endpoint authenticity
 under the explicit leakage assumption used by the relay models. The current
-verifier additionally exposes canonical exporter-label acceptance and a weaker
+verifier additionally exposes acceptance of a non-default exporter label and a weaker
 missing-attestation-after-offer issue. The workspace combines implementation
 regression tests, Tamarin models, and ProVerif~\cite{tamarin,proverif} models,
 and also includes narrower checks for leaf-key substitution and session-scoped
@@ -83,7 +83,7 @@ Its main result is already visible at that level: moving from the legacy
 pre-handshake design to the current post-handshake design does not by itself
 resolve same-endpoint authenticity under the explicit leakage assumption used
 by the relay models, while the current verifier additionally exposes
-canonical exporter-label acceptance and a weaker missing-attestation-after-offer
+acceptance of a non-default exporter label and a weaker missing-attestation-after-offer
 issue.
 For authenticated AI infrastructure, there is also a separate identity
 question beyond channel ownership alone: an accepted peer may still need to be
@@ -94,7 +94,7 @@ mitigation sketch in which that trace disappears.
 
 Across the workspace, Go-language regressions act as implementation anchors for
 concrete verifier behavior. Tamarin is used for request/offer gating,
-attestation presence, canonical-label enforcement, replay/one-shot behavior,
+attestation presence, default-label enforcement, replay/one-shot behavior,
 and a same-endpoint attack trace under leakage. ProVerif is used for
 correspondence-style clarification of attested origin vs.\ same-endpoint
 authenticity, including the legacy/current comparison.
@@ -124,7 +124,7 @@ April 2026).
 This report focuses on that current post-handshake aTLS behavior, while
 keeping a compact legacy/current design split and a minimal reproducibility
 path for the older pre-handshake design. On the current side, it examines
-relay/diversion, canonical exporter-label enforcement, missing attestation after
+relay-style same-endpoint behavior, default Cocos exporter-label enforcement, missing attestation after
 offer, leaf-key substitution, and
 context-reuse questions through a mix of implementation tests and small formal
 models.
@@ -154,7 +154,7 @@ attempt for the entire protocol stack.
 \section{Assumptions}
 
 \begin{itemize}
-\item The relay/diversion analysis uses an explicit leakage assumption: the
+\item The relay-style same-endpoint analysis uses an explicit leakage assumption: the
 attested ephemeral private key is revealed after attestation issuance.
 \item The context-reuse result is session-scoped: with
 \texttt{ea.Session}\footnote{In this report, \texttt{ea.Session} refers to the
@@ -219,7 +219,7 @@ Client nonce + leaf public key. &
 Request context + leaf public key + exported TLS value. \\
 Checked here &
 Request gating and nonce/public-key binding. &
-Canonical exporter-label enforcement, missing attestation after offer, leaf-key substitution, context reuse, and relay / same-endpoint authenticity under leakage. \\
+Default Cocos exporter-label enforcement, missing attestation after offer, leaf-key substitution, context reuse, and relay / same-endpoint authenticity under leakage. \\
 Additional note &
 Fail-closed \texttt{NO\_TEE} is checked as a narrower
 implementation condition. &
@@ -337,9 +337,9 @@ mirror.
 \textbf{Finding} & \textbf{Evidence} & \textbf{Result} & \textbf{Interpretation} \\
 \midrule
 Redesign effect on same-endpoint authenticity & legacy ProVerif + current ProVerif + current Tamarin\footnotemark & not resolved by the post-handshake redesign under the explicit leakage assumption & message placement changed, but live-channel binding remains unestablished \\
-Relay/diversion risk reported in CVE-2026-33697~\cite{ghsa-cve,nvd-cve,osv-cve} & current ProVerif + current Tamarin attack trace & accepted origin persists, but same-endpoint authenticity fails under leakage & CVE-aligned design-level concern, not a full exploit proof \\
+Relay-style same-endpoint risk reported in CVE-2026-33697~\cite{ghsa-cve,nvd-cve,osv-cve} & current ProVerif + current Tamarin attack trace & accepted origin persists, but same-endpoint authenticity fails under leakage & CVE-aligned design-level concern, not a full exploit proof \\
 Same-machine intended-agent identity & current Tamarin + intended-agent-bound mitigation sketch & machine-level attestation alone does not distinguish the intended agent; the mitigation sketch removes that trace in this abstraction & attested machine identity is still not intended-agent identity \\
-Canonical exporter-label enforcement & Go regression + falsified Tamarin lemma + ProVerif correspondence & canonical-label enforcement fails in current verifier behavior & strongest additional finding in this workspace \\
+Default Cocos exporter-label enforcement & Go regression + falsified Tamarin lemma + ProVerif correspondence & default-label enforcement fails in current verifier behavior & strongest additional finding in this workspace \\
 Missing attestation after offer & Go regression + falsified Tamarin lemma & API-level acceptance remains possible after an explicit offer & weaker; end-to-end exploitability is not established here \\
 \bottomrule
 \end{tabularx}
@@ -347,13 +347,13 @@ Missing attestation after offer & Go regression + falsified Tamarin lemma & API-
 \caption{Summary of the main findings supported by this workspace.}
 \label{tab:findings-summary}
 \end{table}
-\footnotetext{The initial Tamarin model in this workspace did not target the relay/diversion assumptions behind CVE-2026-33697. After the models were extended toward same-endpoint authenticity under an explicit ephemeral-key leakage assumption, Tamarin also exposed related behavior.}
+\footnotetext{The initial Tamarin model in this workspace did not target the relay-style same-endpoint assumptions behind CVE-2026-33697. After the models were extended toward same-endpoint authenticity under an explicit ephemeral-key leakage assumption, Tamarin also exposed related behavior.}
 
 \vspace{0.5em}
 Go-language regressions, Tamarin models, and ProVerif models play different
 roles here rather than repeating the same check in three forms. The Go-language
 tests anchor concrete verifier behavior in the current code path. Tamarin
-captures gating, attestation presence, canonical-label enforcement,
+captures gating, attestation presence, default-label enforcement,
 replay/one-shot behavior, and a same-endpoint attack trace under leakage.
 ProVerif clarifies correspondence-style questions about attested origin,
 same-endpoint authenticity, and the legacy/current comparison. A wider
@@ -371,7 +371,7 @@ the report, the important point is what those tests check rather than their
 exact names. The current set covers four behaviors:
 
 \begin{itemize}
-\item acceptance of a non-canonical exporter label during attestation
+\item acceptance of an alternate exporter label during attestation
 verification,
 \item API-level acceptance when an explicit attestation offer is followed by an
 authenticator without an attestation extension,
@@ -386,9 +386,9 @@ verification README.\footnote{\path{verification/README.md}}
 \subsection{Tamarin Results}
 
 The current-design Tamarin artifacts are summarized in the Tamarin
-README.\footnote{\path{verification/tamarin/README.md}} Together they cover
+README.\footnote{\path{verification/post-handshake/README.md}} Together they cover
 attestation offer vs.\ plain request, authenticator origin, attestation
-presence, canonical exporter-label enforcement, and one-shot vs.\ replayable
+presence, default Cocos exporter-label enforcement, and one-shot vs.\ replayable
 request-context usage.
 
 \begin{table}[H]
@@ -400,7 +400,7 @@ request-context usage.
 (1) Server-origin authenticity & An attested client acceptance must correspond to a server-side authenticator creation event. & \resultverified \\
 (2) Offer-gated acceptance & A successful acceptance must be preceded by a client attestation offer. & \resultverified \\
 (3) No attested acceptance from plain mode & Plain requests do not lead to attested acceptance. & \resultverified \\
-(4) Canonical exporter-label enforcement & Accepted attestations should only use the canonical exporter label. & \resultfalsified \\
+(4) Default Cocos exporter-label enforcement & Accepted attestations should only use the expected/default Cocos exporter label. & \resultfalsified \\
 (5) No success without attestation after offer & An offered request should not succeed when the attestation extension is missing. & \resultfalsified \\
 (6) Same-endpoint failure under leakage & Under the explicit leakage assumption, there exists a client-accepted session that does not establish same-endpoint authenticity. & \resulttracefound \\
 (7) Session-scoped one-shot context use & With explicit session tracking, the same request context cannot be accepted twice. & \resultverified \\
@@ -409,16 +409,16 @@ request-context usage.
 (10) Wrong-agent trace under intended-agent-bound mitigation & Under the intended-agent-bound sketch, that same-machine wrong-agent trace is no longer found. & \resultnotrace \\
 \bottomrule
 \end{tabularx}
-\caption{Summary of current-design Tamarin results across the current models. File mapping under \texttt{verification/tamarin/}: (1)--(5) \texttt{cocos\_attestation.spthy}; (6) \texttt{cocos\_same\_endpoint\_current.spthy}; (7)--(8) \texttt{cocos\_context\_reuse\_current.spthy}; (9) \texttt{cocos\_agent\_identity\_current.spthy}; (10) \texttt{cocos\_agent\_identity\_bound\_current.spthy}.}
+\caption{Summary of current-design Tamarin results across the current models. File mapping under \texttt{verification/post-handshake/tamarin/}: (1)--(5) \texttt{cocos\_attestation.spthy}; (6) \texttt{cocos\_same\_endpoint\_current.spthy}; (7)--(8) \texttt{cocos\_context\_reuse\_current.spthy}; (9) \texttt{cocos\_agent\_identity\_current.spthy}; (10) \texttt{cocos\_agent\_identity\_bound\_current.spthy}.}
 \label{tab:tamarin-current}
 \end{table}
 
-The falsified canonical exporter-label lemma is the stronger additional finding. The
+The falsified default-label lemma is the stronger additional finding. The
 falsified missing-attestation-after-offer lemma is weaker because its reachability
 in the default server wiring has not been shown end-to-end.
 
 A separate current-design Tamarin model checks same-endpoint authenticity under
-the explicit leakage assumption.\footnote{\path{verification/tamarin/cocos_same_endpoint_current.spthy}}
+the explicit leakage assumption.\footnote{\path{verification/post-handshake/tamarin/cocos_same_endpoint_current.spthy}}
 In that model:
 \begin{itemize}
 \item \texttt{received\_attestation\_has\_server\_origin} is verified,
@@ -428,7 +428,7 @@ trace.
 This mirrors the relay/same-endpoint split also seen in the ProVerif artifacts.
 
 A separate session-scoped Tamarin model checks a different
-question.\footnote{\path{verification/tamarin/cocos_context_reuse_current.spthy}}
+question.\footnote{\path{verification/post-handshake/tamarin/cocos_context_reuse_current.spthy}}
 In that model,
 \texttt{session\_context\_is\_one\_shot} is verified and
 \texttt{no\_session\_replay\_exists} has a verified replay trace. This is meant
@@ -437,8 +437,8 @@ that every current-design validation path is automatically one-shot.
 
 A second pair of current-design Tamarin models checks a different identity
 gap: whether machine-level attestation can distinguish the intended AI agent
-from another co-resident agent on the same attested machine.\footnote{\path{verification/tamarin/cocos_agent_identity_current.spthy};
-\path{verification/tamarin/cocos_agent_identity_bound_current.spthy}}
+from another co-resident agent on the same attested machine.\footnote{\path{verification/post-handshake/tamarin/cocos_agent_identity_current.spthy};
+\path{verification/post-handshake/tamarin/cocos_agent_identity_bound_current.spthy}}
 The unbound model verifies machine origin and yields a wrong-agent attack
 trace on the same machine. The mitigation sketch also verifies machine origin,
 but the same wrong-agent trace is no longer found. This remains a narrow
@@ -449,9 +449,9 @@ co-resident-agent confusion trace.
 \subsection{ProVerif Results}
 
 The ProVerif artifacts are summarized in the ProVerif
-README.\footnote{\path{verification/proverif/README.md}} They were added
+README.\footnote{\path{verification/post-handshake/README.md}} They were added
 because the first Tamarin model, which was not explicitly focused on the
-CVE-aligned relay/diversion question, did not cover ephemeral key compromise,
+CVE-aligned relay-style same-endpoint question, did not cover ephemeral key compromise,
 distinct channels or sessions, or a correspondence goal for same-channel
 endpoint authenticity.
 
@@ -488,17 +488,17 @@ Under the explicit leakage assumption, the current relay model does not preserve
 \texttt{current: ClientAccepts ==> ServerBindsSameChannel} &
 \resultfalse{} &
 Under the explicit leakage assumption, the current relay model does not establish same-endpoint authenticity for a client-accepted session. \\
-(5) Canonical exporter-label enforcement &
-\texttt{current: ClientAccepts ==> ServerUsesCanonicalLabel} &
+(5) Default Cocos exporter-label enforcement &
+\texttt{current: ClientAccepts ==> ServerUsesDefaultLabel} &
 \resultfalse{} &
-Acceptance does not imply that the canonical exporter label was used. \\
+Acceptance does not imply that the expected/default Cocos exporter label was used. \\
 (6) Leaf-key substitution resistance &
 \texttt{current: ClientAccepts ==> ServerAttestsLeafKey} &
 \resulttrue{} &
 Within this abstraction, client acceptance remains tied to the attested leaf public key. \\
 \bottomrule
 \end{tabularx}
-\caption{Summary of the current-design ProVerif correspondence queries used in this workspace. File mapping under \texttt{verification/proverif/}: (1)--(4) \texttt{cocos\_relay\_attack.pv}; (5) \texttt{cocos\_exporter\_label\_current.pv}; (6) \texttt{cocos\_leaf\_key\_substitution\_current.pv}.}
+\caption{Summary of the current-design ProVerif correspondence queries used in this workspace. File mapping under \texttt{verification/post-handshake/proverif/}: (1)--(4) \texttt{cocos\_relay\_attack.pv}; (5) \texttt{cocos\_exporter\_label\_current.pv}; (6) \texttt{cocos\_leaf\_key\_substitution\_current.pv}.}
 \label{tab:proverif-results}
 \end{table}
 
@@ -510,7 +510,7 @@ relay models. Read together with the Appendix, this also shows that moving
 from the legacy pre-handshake design to the current post-handshake design does
 not by itself resolve the same-endpoint problem.
 
-Figure~\ref{fig:relay} gives the relay/diversion intuition behind those
+Figure~\ref{fig:relay} gives the relay-style same-endpoint intuition behind those
 current-design ProVerif results and highlights the gap between attested origin
 and same-endpoint authenticity.
 
@@ -549,7 +549,7 @@ and same-endpoint authenticity.
   {Not bound in the attestation itself:\\the client's live channel identity or a proof that the accepted peer is the same endpoint as the genuine service.};
 
 \end{tikzpicture}
-\caption{Relay/diversion intuition aligned with the risk reported in CVE-2026-33697. Green notes mark values explicitly bound into the attestation binder; red notes mark the leakage assumption or values not bound to the client's live channel proof.}
+\caption{Relay-style same-endpoint intuition aligned with the risk reported in CVE-2026-33697. Green notes mark values explicitly bound into the attestation binder; red notes mark the leakage assumption or values not bound to the client's live channel proof.}
 \label{fig:relay}
 \end{figure}
 
@@ -561,9 +561,9 @@ proved theorem.
 
 \subsection{Relay / same-endpoint authenticity under leakage}
 
-The relay/diversion and same-endpoint authenticity results are design-level and depend on the explicit
+The relay-style same-endpoint authenticity results are design-level and depend on the explicit
 ephemeral-key leakage assumption used by the ProVerif and Tamarin models. They
-are best read as evidence aligned with the relay/diversion risk reported in
+are best read as evidence aligned with the relay risk reported in
 CVE-2026-33697~\cite{ghsa-cve,nvd-cve,osv-cve}, not as a full end-to-end exploit proof for the complete
 implementation.
 
@@ -606,11 +606,11 @@ deployment recipe, but it is a positive signal that agent-bound attestation
 plus agent-bound live proof is a plausible direction for closing the
 same-machine stand-in risk.
 
-\subsection{Canonical Exporter-Label Enforcement}
+\subsection{Default Cocos Exporter-Label Enforcement}
 
-The canonical exporter-label issue is the strongest additional finding in this
+The default Cocos exporter-label issue is the strongest additional finding in this
 workspace because it is supported by three separate anchors: a falsified
-Tamarin property, a ProVerif correspondence whose canonical-label condition
+Tamarin property, a ProVerif correspondence whose default-label condition
 fails, and a Go regression showing acceptance of an alternate exporter label.
 
 \subsection{Missing Attestation After Offer}
@@ -637,28 +637,26 @@ This workspace is based on the Cocos AI repository~\cite{cocosrepo}, with the le
 discussion anchored around commits \texttt{e372cfc} and \texttt{80bf813},
 respectively.
 
-The current design is reproduced through the repository wrapper
-scripts.\footnote{\path{verification/run-legacy-tests.sh}; \path{verification/run-go-tests.sh}; \path{verification/run-tamarin.sh}; \path{verification/run-proverif.sh}} The
-recommended order is legacy first, then Go tests, then Tamarin, then
-ProVerif.
+The bundled verification models are reproduced through the repository wrapper
+scripts.\footnote{\path{verification/run-tamarin.sh}; \path{verification/run-proverif.sh}} The
+implementation-level Go regressions discussed above are not repackaged in this
+public artifact repository.
 
 The legacy design is kept as a compact comparison point rather than as
-the main subject of the report. The legacy wrapper script\footnote{\path{verification/run-legacy-tests.sh}}
-checks out commit \texttt{e372cfc} into a temporary worktree and runs a narrow
-legacy regression anchor. It is paired with the legacy Tamarin
-model,\footnote{\path{verification/tamarin/cocos_legacy_attestation.spthy}}
+the main subject of the report. The legacy Tamarin
+model,\footnote{\path{verification/intra-handshake/tamarin/cocos_legacy_attestation.spthy}}
 which verifies request-gated acceptance, fail-closed \texttt{NO\_TEE}
 handling, and nonce/public-key binding. The legacy ProVerif comparison
-models\footnote{\path{verification/proverif/cocos_legacy_request_binding.pv};
-\path{verification/proverif/cocos_legacy_relay_attack.pv}} add matching
+models\footnote{\path{verification/intra-handshake/proverif/cocos_legacy_request_binding.pv};
+\path{verification/intra-handshake/proverif/cocos_legacy_relay_attack.pv}} add matching
 formal results on the same theme.
 
 The verification workspace overview, tool-specific notes, and relay-aligned
 evidence note are all linked from the repository documentation.\footnote{Overview:
-\path{verification/README.md}. Tamarin notes:
-\path{verification/tamarin/README.md}. ProVerif notes:
-\path{verification/proverif/README.md}. Relay note:
-\path{verification/proverif/CVE-2026-33697-evidence.md}.}
+\path{verification/README.md}. Intra-handshake notes:
+\path{verification/intra-handshake/README.md}. Post-handshake notes:
+\path{verification/post-handshake/README.md}. Relay note:
+\path{verification/post-handshake/proverif/CVE-2026-33697-evidence.md}.}
 
 Raw command outputs, scripts, and file inventories are intentionally kept in
 the repository rather than repeated in the PDF.
@@ -672,11 +670,10 @@ also leaves a short list of concrete follow-up checks:
 \item how to guarantee same-endpoint authenticity even under the explicit
 leakage assumption used by the relay models,
 \item how to distinguish the intended remote AI agent from another
-\item how to distinguish the intended remote AI agent from another
 co-resident agent or local stand-in on the same attested machine, and whether
 the intended-agent-bound mitigation sketch can be turned into a stronger
 protocol guarantee,
-\item whether canonical exporter-label enforcement can be made fail-closed in
+\item whether default Cocos exporter-label enforcement can be made fail-closed in
 the verifier,
 \item whether missing attestation after an explicit offer is blocked
 end-to-end in the default server wiring,
@@ -694,7 +691,7 @@ legacy/current comparison shows that relocating attestation into the
 post-handshake exported-authenticator path does not by itself resolve
 same-endpoint authenticity on the relay question modeled here. The current
 verifier path also exposes additional problems beyond
-that published relay-aligned concern, most clearly in canonical
+that published relay-aligned concern, most clearly in default Cocos
 exporter-label enforcement and more weakly in missing attestation after
 offer. More broadly, attested machine identity is not yet the same thing as
 intended AI-agent identity on that machine, and same-endpoint authenticity
@@ -747,7 +744,7 @@ OSV entry for CVE-2026-33697:
 
 \bibitem{relay-note}
 Public discussion around CVE-2026-33697, plus a local repository note
-that summarizes how the workspace aligns its relay/diversion models with that
+that summarizes how the workspace aligns its relay-style same-endpoint models with that
 discussion.
 
 \bibitem{tamarin}
@@ -777,12 +774,12 @@ Certificate / public-key substitution & \statuschecked & \statuschecked \\
 Legacy \texttt{NO\_TEE} fail-closed handling & \statuschecked & \statusna \\
 Current missing attestation after explicit offer & \statusna & \statuschecked \\
 Extension placement / certificate-entry confusion & \statusnotyet & \statuschecked \\
-Canonical exporter-label enforcement & \statusna & \statuschecked \\
+Default Cocos exporter-label enforcement & \statusna & \statuschecked \\
 Relay / same-endpoint authenticity under leakage & \statuschecked & \statuschecked \\
 Same-machine intended-agent identity & \statusna & \statuschecked \\
 \bottomrule
 \end{tabularx}
-\caption{Workspace coverage across legacy and current Cocos AI aTLS designs. Here, ``checked'' means that the question is directly exercised by a test or formal model result in this workspace; it does not imply that the answer is always positive. The strongest current-design signals are freshness-token binding, certificate/public-key substitution, missing-attestation handling, canonical exporter-label enforcement, relay / same-endpoint authenticity under the explicit leakage assumption, and same-machine intended-agent identity. The strongest legacy-design signals are request-gated acceptance, nonce/public-key binding, and a legacy-side relay / same-endpoint comparison under leakage, with \texttt{NO\_TEE} fail-closed handling retained as a narrower implementation condition.}
+\caption{Workspace coverage across legacy and current Cocos AI aTLS designs. Here, ``checked'' means that the question is directly exercised by a test or formal model result in this workspace; it does not imply that the answer is always positive. The strongest current-design signals are freshness-token binding, certificate/public-key substitution, missing-attestation handling, default Cocos exporter-label enforcement, relay / same-endpoint authenticity under the explicit leakage assumption, and same-machine intended-agent identity. The strongest legacy-design signals are request-gated acceptance, nonce/public-key binding, and a legacy-side relay / same-endpoint comparison under leakage, with \texttt{NO\_TEE} fail-closed handling retained as a narrower implementation condition.}
 \label{tab:matrix}
 \end{table}
 

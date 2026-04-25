@@ -1,4 +1,4 @@
-(* Minimal symbolic model for the relay/diversion risk described by
+(* Minimal symbolic model for a relay-style same-endpoint risk aligned with
    CVE-2026-33697.
 
    Intuition:
@@ -45,7 +45,7 @@ let GenuineService =
      extracted after attestation was generated. *)
   event EphemeralKeyLeaked(pkE);
   out(net, skE);
-  in(net, challenge_payload(chan_id_from_client, challenge: bitstring));
+  in(net, challenge_payload(=chan_id_from_client, challenge: bitstring));
   event ServerBindsSameChannel(chan_id_from_client, service, pkE);
   out(net, sign(challenge_payload(chan_id_from_client, challenge), skE)).
 

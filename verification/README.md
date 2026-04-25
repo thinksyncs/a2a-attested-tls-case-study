@@ -1,68 +1,51 @@
 # Verification Workspace
 
-This directory collects the machine-checked verification artifacts bundled with
+This directory contains the machine-checked verification artifacts bundled with
 the public case-study repository.
 
-## What is here
+The artifacts are separated by design generation first:
 
-- `verification/tamarin/`
-  Tamarin models for both the legacy pre-handshake and current
-  post-handshake designs
-- `verification/proverif/`
-  ProVerif models for relay/diversion, same-endpoint authenticity,
-  canonical exporter-label enforcement, leaf-key substitution, and compact
-  legacy/current comparison points
+- `intra-handshake/`
+  legacy pre-handshake / intra-handshake artifacts
+- `post-handshake/`
+  current post-handshake exported-authenticator artifacts
+
+Each generation then contains `tamarin/` and/or `proverif/` subdirectories.
 
 The implementation-level Go regressions discussed in the report are not bundled
-here. This public repository keeps the verification models and the report itself as a
-standalone artifact set for sharing and rerunning.
+here. This public repository keeps the verification models and the report itself
+as a standalone artifact set for sharing and rerunning.
 
 ## Quick start
 
-### 1. Tamarin
+Run all Tamarin models:
 
 ```sh
 verification/run-tamarin.sh
 ```
 
-Expected highlights:
-
-- legacy model:
-  - `legacy_acceptance_requires_prior_request` is verified
-  - `legacy_no_tee_is_fail_closed` is verified
-  - `legacy_attestation_binds_nonce_and_public_key` is verified
-- `attested_authenticator_has_server_origin` is verified
-- `attested_acceptance_requires_prior_offer` is verified
-- `plain_requests_do_not_produce_attested_acceptance` is verified
-- `accepted_attestation_must_use_default_exporter_label` is falsified
-- `offered_requests_must_not_succeed_without_attestation` is falsified
-- `received_attestation_has_server_origin` is verified
-- `same_endpoint_can_fail_under_leakage` yields an attack trace
-- `received_machine_attestation_has_machine_origin` is verified
-- `intended_agent_identity_can_fail_on_same_machine` yields an attack trace
-- `received_bound_attestation_has_machine_origin` is verified
-- `wrong_agent_identity_can_fail_on_same_machine` has no trace found
-- `session_context_is_one_shot` is verified
-- `no_session_replay_exists` yields a replay trace
-
-### 2. ProVerif
+Run all ProVerif models:
 
 ```sh
 verification/run-proverif.sh
 ```
 
-Expected highlights:
+## Intra-handshake artifacts
 
-- `ClientAccepts ==> ClientSendsEARequest` is `true`
-- `ClientAccepts ==> ServerIssuesAttestation` is `true`
-- `ClientAccepts ==> ServerBuildsAuthenticator` is `false`
-- `ClientAccepts ==> ServerBindsSameChannel` is `false`
-- `ClientAccepts ==> ServerUsesCanonicalLabel` is `false`
-- `ClientAccepts ==> ServerAttestsLeafKey` is `true`
-- `ClientAcceptsLegacy ==> ClientRequestsEvidence` is `true`
-- `ClientAcceptsLegacy ==> ServerIssuesLegacyAttestation` is `true`
-- `ClientAcceptsLegacy ==> ServerCreatesLegacyReport` is `true`
-- `ClientAcceptsLegacy ==> LegacyServerBindsSameChannel` is `false`
+See `verification/intra-handshake/README.md`.
+
+These artifacts correspond to the older legacy design where attestation is
+carried inside the TLS handshake. They are retained as compact comparison
+points for request gating, nonce/public-key binding, and legacy relay /
+same-endpoint behavior under the same leakage-style abstraction.
+
+## Post-handshake artifacts
+
+See `verification/post-handshake/README.md`.
+
+These artifacts correspond to the current design where the client sends an
+exported-authenticator request after the TLS 1.3 handshake and the server
+returns an exported authenticator carrying attestation material.
 
 ## Notes
 
@@ -72,6 +55,10 @@ Expected highlights:
   `good` and `bad`. For attack-trace lemmas, the important question is whether
   a trace is found. The report uses `trace found` and `no trace found` wording
   for those rows.
+- The intended-agent-bound Tamarin model is a mitigation sketch, not a complete
+  proof. Its direct wrong-agent trace is no longer found, but the helper lemma
+  `acceptance_requires_intended_agent_response` is still falsified in this
+  abstraction.
 - If `opam` is not yet initialized in another environment, run:
 
 ```sh

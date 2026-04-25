@@ -2,15 +2,15 @@
    post-handshake Cocos AI aTLS verifier.
 
    Goal:
-   - Check whether client acceptance implies use of the canonical attestation
-     exporter label.
+   - Check whether client acceptance implies use of the expected/default Cocos
+     attestation exporter label.
 
    Scope:
    - The attestation authority signs a payload containing the service
      identity, ephemeral public key, request context, and exporter label.
    - The binder is verified against the exporter label carried inside the
      signed payload.
-   - The verifier therefore accepts either the canonical label or an
+   - The verifier therefore accepts either the default label or an
      alternate peer-chosen label if the binder matches that label.
 *)
 
@@ -20,7 +20,7 @@ type pkey.
 free net: channel.
 free service: bitstring.
 free skA: skey [private].
-free canonical_label: bitstring.
+free default_label: bitstring.
 free alternate_label: bitstring.
 
 fun pk(skey): pkey.
@@ -32,19 +32,19 @@ fun sign(bitstring, skey): bitstring.
 reduc forall m: bitstring, k: skey; checksign(sign(m, k), pk(k)) = m.
 
 event ServerIssuesAttestation(bitstring, pkey, bitstring, bitstring).
-event ServerUsesCanonicalLabel(bitstring, pkey, bitstring).
+event ServerUsesDefaultLabel(bitstring, pkey, bitstring).
 event ClientAccepts(bitstring, pkey, bitstring, bitstring).
 
-let CanonicalLabelServer =
+let DefaultLabelServer =
   new skE: skey;
   in(net, ea_request(req_ctx: bitstring));
   let pkE = pk(skE) in
-  event ServerIssuesAttestation(service, pkE, req_ctx, canonical_label);
-  event ServerUsesCanonicalLabel(service, pkE, req_ctx);
+  event ServerIssuesAttestation(service, pkE, req_ctx, default_label);
+  event ServerUsesDefaultLabel(service, pkE, req_ctx);
   out(net,
       authenticator(
-        sign(att_payload(service, pkE, req_ctx, canonical_label), skA),
-        sign(binder_value(canonical_label, req_ctx, pkE), skE))).
+        sign(att_payload(service, pkE, req_ctx, default_label), skA),
+        sign(binder_value(default_label, req_ctx, pkE), skE))).
 
 let AlternateLabelServer =
   new skE: skey;
@@ -72,7 +72,7 @@ query pkE_q: pkey, ctx_q: bitstring, lbl_q: bitstring;
 
 query pkE_q: pkey, ctx_q: bitstring, lbl_q: bitstring;
   event(ClientAccepts(service, pkE_q, ctx_q, lbl_q))
-  ==> event(ServerUsesCanonicalLabel(service, pkE_q, ctx_q)).
+  ==> event(ServerUsesDefaultLabel(service, pkE_q, ctx_q)).
 
 process
-  (!CanonicalLabelServer) | (!AlternateLabelServer) | (!Client)
+  (!DefaultLabelServer) | (!AlternateLabelServer) | (!Client)

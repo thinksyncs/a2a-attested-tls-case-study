@@ -41,7 +41,7 @@ let GenuineService =
   out(net, authenticator(sign(attest_payload(service, pkE, req_ctx), skA)));
   (* Explicit leakage assumption used to study same-endpoint failure. *)
   out(net, skE);
-  in(net, challenge_payload(chan_id_from_client, challenge: bitstring));
+  in(net, challenge_payload(=chan_id_from_client, challenge: bitstring));
   event ServerControlsLiveEndpoint(service, chan_id_from_client, pkE);
   out(net, sign(challenge_payload(chan_id_from_client, challenge), skE)).
 
