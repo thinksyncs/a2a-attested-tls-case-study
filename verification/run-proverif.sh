@@ -21,6 +21,30 @@ echo "== cocos_leaf_key_substitution_current.pv =="
 proverif verification/post-handshake/proverif/cocos_leaf_key_substitution_current.pv
 
 echo
+echo "== cocos_infrastructure_identity_current.pv =="
+proverif verification/post-handshake/proverif/cocos_infrastructure_identity_current.pv
+
+echo
+echo "== cocos_infrastructure_identity_bound_current.pv =="
+proverif verification/post-handshake/proverif/cocos_infrastructure_identity_bound_current.pv
+
+echo
+echo "== cocos_agent_identity_current.pv =="
+proverif verification/post-handshake/proverif/cocos_agent_identity_current.pv
+
+echo
+echo "== cocos_agent_identity_bound_current.pv =="
+proverif verification/post-handshake/proverif/cocos_agent_identity_bound_current.pv
+
+echo
+echo "== cocos_task_context_current.pv =="
+proverif verification/post-handshake/proverif/cocos_task_context_current.pv
+
+echo
+echo "== cocos_task_context_bound_current.pv =="
+proverif verification/post-handshake/proverif/cocos_task_context_bound_current.pv
+
+echo
 echo "== cocos_legacy_request_binding.pv =="
 proverif verification/intra-handshake/proverif/cocos_legacy_request_binding.pv
 

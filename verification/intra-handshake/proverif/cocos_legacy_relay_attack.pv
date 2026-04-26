@@ -1,4 +1,4 @@
-(* Minimal ProVerif model for the legacy pre-handshake relay-style
+(* Minimal ProVerif model for the legacy intra-handshake relay-style
    same-endpoint question.
 
    Intuition:

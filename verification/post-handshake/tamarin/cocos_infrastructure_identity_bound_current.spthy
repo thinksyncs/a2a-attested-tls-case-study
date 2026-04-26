@@ -1,0 +1,94 @@
+theory Cocos_Infrastructure_Identity_Bound_Current
+begin
+
+/* L2 mitigation sketch:
+   - the attestation explicitly names the intended infrastructure identity
+   - the live response is tagged with that same identity
+   - the direct diversion trace from the unbound sketch should disappear
+*/
+
+functions:
+  c_chan/0,
+  intended_infra/0,
+  other_infra/0,
+  shared_measurement/0,
+  pk/1,
+  attest/4,
+  signed_att/2 [private],
+  chall/2,
+  resp/3 [private]
+
+rule Client_Targets_Intended_Infrastructure:
+  [ Fr(~ctx) ]
+  --[ ClientTargetsInfrastructure($C, intended_infra, c_chan, ~ctx) ]->
+  [ St_C_Req($C, intended_infra, c_chan, ~ctx),
+    Out(<$C, intended_infra, c_chan, ~ctx>) ]
+
+rule Intended_Infrastructure_Issues_Bound_Attestation:
+  [ In(<$C, intended_infra, chan, ctx>),
+    Fr(~esk) ]
+  --[ InfrastructureIssuesBoundAttestation(intended_infra, shared_measurement, ctx, pk(~esk)) ]->
+  [ St_IntendedInfra(intended_infra, chan, ctx, ~esk),
+    Out(<$C, intended_infra, ctx, pk(~esk),
+         signed_att(attest(intended_infra, shared_measurement, ctx, pk(~esk)), intended_infra)>) ]
+
+rule Other_Infrastructure_Issues_Bound_Attestation:
+  [ In(<$C, intended_infra, chan, ctx>),
+    Fr(~esk) ]
+  --[ InfrastructureIssuesBoundAttestation(other_infra, shared_measurement, ctx, pk(~esk)) ]->
+  [ St_OtherInfra(other_infra, chan, ctx, ~esk),
+    Out(<$C, other_infra, ctx, pk(~esk),
+         signed_att(attest(other_infra, shared_measurement, ctx, pk(~esk)), other_infra)>) ]
+
+rule Client_Sends_Challenge:
+  [ St_C_Req($C, intended_infra, chan, ctx),
+    In(<$C, intended_infra, ctx, pkI,
+        signed_att(attest(intended_infra, shared_measurement, ctx, pkI), intended_infra)>),
+    Fr(~n) ]
+  --[ ClientReceivesBoundInfrastructureAttestation($C, intended_infra, chan, ctx, pkI) ]->
+  [ St_C_Wait($C, intended_infra, chan, ctx, pkI, chall(chan, ~n)),
+    Out(<chan, chall(chan, ~n)>) ]
+
+rule Intended_Infrastructure_Responds:
+  [ St_IntendedInfra(intended_infra, chan, ctx, esk),
+    In(<chan, cterm>) ]
+  --[ IntendedInfrastructureResponded(intended_infra, chan, pk(esk)) ]->
+  [ Out(resp(intended_infra, pk(esk), cterm)) ]
+
+rule Other_Infrastructure_Responds:
+  [ St_OtherInfra(other_infra, chan, ctx, esk),
+    In(<chan, cterm>) ]
+  --[ OtherInfrastructureResponded(other_infra, chan, pk(esk)) ]->
+  [ Out(resp(other_infra, pk(esk), cterm)) ]
+
+rule Client_Verifies_Bound_Response:
+  [ St_C_Wait($C, intended_infra, chan, ctx, pkI, cterm),
+    In(resp(intended_infra, pkI, cterm)) ]
+  --[ ClientAcceptsIntendedInfrastructure($C, intended_infra, chan, ctx, pkI) ]->
+  [ ]
+
+lemma received_bound_infrastructure_attestation_has_intended_origin:
+  "All C I chan ctx pkI #i.
+    ClientReceivesBoundInfrastructureAttestation(C, I, chan, ctx, pkI) @ i
+    ==>
+      (Ex #j.
+        InfrastructureIssuesBoundAttestation(I, shared_measurement, ctx, pkI) @ j
+        & j < i)"
+
+lemma acceptance_requires_intended_infrastructure_response:
+  "All C I chan ctx pkI #i.
+    ClientAcceptsIntendedInfrastructure(C, I, chan, ctx, pkI) @ i
+    ==>
+      (Ex response_chan #j.
+        IntendedInfrastructureResponded(I, response_chan, pkI) @ j & j < i)"
+
+lemma diversion_can_fail_with_infrastructure_bound_attestation:
+  exists-trace
+  "Ex C ctx pkI #i #j #k.
+    ClientTargetsInfrastructure(C, intended_infra, c_chan, ctx) @ i
+    & OtherInfrastructureResponded(other_infra, c_chan, pkI) @ j
+    & ClientAcceptsIntendedInfrastructure(C, intended_infra, c_chan, ctx, pkI) @ k
+    & not(Ex #l.
+        IntendedInfrastructureResponded(intended_infra, c_chan, pkI) @ l)"
+
+end

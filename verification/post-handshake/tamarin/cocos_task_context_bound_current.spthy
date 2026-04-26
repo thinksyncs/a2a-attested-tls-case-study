@@ -1,0 +1,83 @@
+theory Cocos_Task_Context_Bound_Current
+begin
+
+/* L4 mitigation sketch:
+   - the intended task/thread/delegation identity is explicitly bound into the
+     signed attestation and the live response
+   - this is not a Cocos implementation proof; it is a minimal design shape
+*/
+
+functions:
+  c_chan/0,
+  intended_agent/0,
+  intended_task/0,
+  other_task/0,
+  pk/1,
+  attest_bound/4,
+  signed_att/2 [private],
+  chall/3,
+  resp/3 [private]
+
+rule Client_Targets_Intended_Task:
+  [ Fr(~ctx) ]
+  --[ ClientTargetsTask($C, intended_agent, intended_task, c_chan, ~ctx) ]->
+  [ St_C_Req($C, intended_agent, intended_task, c_chan, ~ctx),
+    Out(<$C, intended_agent, intended_task, c_chan, ~ctx>) ]
+
+rule Intended_Task_Issues_Bound_Attestation:
+  [ In(<$C, intended_agent, intended_task, chan, ctx>),
+    Fr(~esk) ]
+  --[ TaskBoundAttestationIssued(intended_agent, intended_task, ctx, pk(~esk)) ]->
+  [ St_IntendedTask(intended_agent, intended_task, chan, ctx, ~esk),
+    Out(<$C, intended_task, ctx, pk(~esk),
+         signed_att(attest_bound(intended_agent, intended_task, ctx, pk(~esk)), intended_agent)>) ]
+
+rule Other_Task_Issues_Bound_Attestation:
+  [ In(<$C, intended_agent, other_task, chan, ctx>),
+    Fr(~esk) ]
+  --[ TaskBoundAttestationIssued(intended_agent, other_task, ctx, pk(~esk)) ]->
+  [ St_OtherTask(intended_agent, other_task, chan, ctx, ~esk),
+    Out(<$C, other_task, ctx, pk(~esk),
+         signed_att(attest_bound(intended_agent, other_task, ctx, pk(~esk)), intended_agent)>) ]
+
+rule Client_Sends_Challenge:
+  [ St_C_Req($C, intended_agent, intended_task, chan, ctx),
+    In(<$C, intended_task, ctx, pkE,
+        signed_att(attest_bound(intended_agent, intended_task, ctx, pkE), intended_agent)>),
+    Fr(~n) ]
+  --[ ClientReceivesTaskBoundAttestation($C, intended_agent, intended_task, chan, ctx, pkE) ]->
+  [ St_C_Wait($C, intended_agent, intended_task, chan, ctx, pkE, chall(chan, intended_task, ~n)),
+    Out(<chan, chall(chan, intended_task, ~n)>) ]
+
+rule Intended_Task_Responds:
+  [ St_IntendedTask(intended_agent, intended_task, chan, ctx, esk),
+    In(<chan, cterm>) ]
+  --[ IntendedTaskResponded(intended_agent, intended_task, chan, pk(esk)) ]->
+  [ Out(resp(pk(esk), intended_task, cterm)) ]
+
+rule Other_Task_Responds:
+  [ St_OtherTask(intended_agent, other_task, chan, ctx, esk),
+    In(<chan, cterm>) ]
+  --[ OtherTaskResponded(intended_agent, other_task, chan, pk(esk)) ]->
+  [ Out(resp(pk(esk), other_task, cterm)) ]
+
+rule Client_Verifies_Response:
+  [ St_C_Wait($C, intended_agent, intended_task, chan, ctx, pkE, cterm),
+    In(resp(pkE, intended_task, cterm)) ]
+  --[ ClientAcceptsIntendedTask($C, intended_agent, intended_task, chan, ctx, pkE) ]->
+  [ ]
+
+lemma received_task_attestation_has_bound_origin:
+  "All C A T chan ctx pkE #i.
+    ClientReceivesTaskBoundAttestation(C, A, T, chan, ctx, pkE) @ i
+    ==>
+      (Ex #j. TaskBoundAttestationIssued(A, T, ctx, pkE) @ j & j < i)"
+
+lemma wrong_task_context_can_fail_under_task_bound_mitigation:
+  exists-trace
+  "Ex C ctx pkE #i #j #k.
+    ClientTargetsTask(C, intended_agent, intended_task, c_chan, ctx) @ i
+    & OtherTaskResponded(intended_agent, other_task, c_chan, pkE) @ j
+    & ClientAcceptsIntendedTask(C, intended_agent, intended_task, c_chan, ctx, pkE) @ k"
+
+end

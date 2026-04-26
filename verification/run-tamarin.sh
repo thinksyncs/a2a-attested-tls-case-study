@@ -25,5 +25,21 @@ echo "== cocos_agent_identity_bound_current.spthy =="
 tamarin-prover --prove verification/post-handshake/tamarin/cocos_agent_identity_bound_current.spthy
 
 echo
+echo "== cocos_infrastructure_identity_current.spthy =="
+tamarin-prover --prove verification/post-handshake/tamarin/cocos_infrastructure_identity_current.spthy
+
+echo
+echo "== cocos_infrastructure_identity_bound_current.spthy =="
+tamarin-prover --prove verification/post-handshake/tamarin/cocos_infrastructure_identity_bound_current.spthy
+
+echo
+echo "== cocos_task_context_current.spthy =="
+tamarin-prover --prove verification/post-handshake/tamarin/cocos_task_context_current.spthy
+
+echo
+echo "== cocos_task_context_bound_current.spthy =="
+tamarin-prover --prove verification/post-handshake/tamarin/cocos_task_context_bound_current.spthy
+
+echo
 echo "== cocos_context_reuse_current.spthy =="
 tamarin-prover --prove verification/post-handshake/tamarin/cocos_context_reuse_current.spthy

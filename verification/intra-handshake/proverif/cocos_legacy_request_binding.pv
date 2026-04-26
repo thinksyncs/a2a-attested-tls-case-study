@@ -1,4 +1,4 @@
-(* Minimal ProVerif model for the legacy pre-handshake Cocos AI aTLS design.
+(* Minimal ProVerif model for the legacy intra-handshake Cocos AI aTLS design.
 
    Goal:
    - Check whether client acceptance implies a prior evidence request and a

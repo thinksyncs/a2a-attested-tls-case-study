@@ -1,0 +1,97 @@
+theory Cocos_Infrastructure_Identity_Current
+begin
+
+/* L2 diversion sketch:
+   - the client intends one infrastructure endpoint
+   - another genuine endpoint with the same measurement can answer
+   - the unbound attestation names the measurement, context, and key, but not
+     the intended VM / tenant / service / deployment identity
+*/
+
+functions:
+  c_chan/0,
+  intended_infra/0,
+  other_infra/0,
+  shared_measurement/0,
+  pk/1,
+  attest/3,
+  signed_att/2 [private],
+  chall/2,
+  resp/2 [private]
+
+rule Client_Targets_Intended_Infrastructure:
+  [ Fr(~ctx) ]
+  --[ ClientTargetsInfrastructure($C, intended_infra, c_chan, ~ctx) ]->
+  [ St_C_Req($C, intended_infra, c_chan, ~ctx),
+    Out(<$C, intended_infra, c_chan, ~ctx>) ]
+
+rule Intended_Infrastructure_Issues_Attestation:
+  [ In(<$C, intended_infra, chan, ctx>),
+    Fr(~esk) ]
+  --[ InfrastructureIssuesAttestation(intended_infra, shared_measurement, ctx, pk(~esk)) ]->
+  [ St_IntendedInfra(intended_infra, chan, ctx, ~esk),
+    Out(<$C, ctx, pk(~esk),
+         signed_att(attest(shared_measurement, ctx, pk(~esk)), intended_infra)>) ]
+
+rule Other_Infrastructure_Issues_Attestation:
+  [ In(<$C, intended_infra, chan, ctx>),
+    Fr(~esk) ]
+  --[ InfrastructureIssuesAttestation(other_infra, shared_measurement, ctx, pk(~esk)) ]->
+  [ St_OtherInfra(other_infra, chan, ctx, ~esk),
+    Out(<$C, ctx, pk(~esk),
+         signed_att(attest(shared_measurement, ctx, pk(~esk)), other_infra)>) ]
+
+rule Client_Sends_Challenge_From_Intended_Infrastructure:
+  [ St_C_Req($C, intended_infra, chan, ctx),
+    In(<$C, ctx, pkE,
+        signed_att(attest(shared_measurement, ctx, pkE), intended_infra)>),
+    Fr(~n) ]
+  --[ ClientReceivesInfrastructureAttestation($C, intended_infra, chan, ctx, pkE) ]->
+  [ St_C_Wait($C, intended_infra, chan, ctx, pkE, chall(chan, ~n)),
+    Out(<chan, chall(chan, ~n)>) ]
+
+rule Client_Sends_Challenge_From_Other_Infrastructure:
+  [ St_C_Req($C, intended_infra, chan, ctx),
+    In(<$C, ctx, pkE,
+        signed_att(attest(shared_measurement, ctx, pkE), other_infra)>),
+    Fr(~n) ]
+  --[ ClientReceivesInfrastructureAttestation($C, intended_infra, chan, ctx, pkE) ]->
+  [ St_C_Wait($C, intended_infra, chan, ctx, pkE, chall(chan, ~n)),
+    Out(<chan, chall(chan, ~n)>) ]
+
+rule Intended_Infrastructure_Responds:
+  [ St_IntendedInfra(intended_infra, chan, ctx, esk),
+    In(<chan, cterm>) ]
+  --[ IntendedInfrastructureResponded(intended_infra, chan, pk(esk)) ]->
+  [ Out(resp(pk(esk), cterm)) ]
+
+rule Other_Infrastructure_Responds:
+  [ St_OtherInfra(other_infra, chan, ctx, esk),
+    In(<chan, cterm>) ]
+  --[ OtherInfrastructureResponded(other_infra, chan, pk(esk)) ]->
+  [ Out(resp(pk(esk), cterm)) ]
+
+rule Client_Verifies_Response:
+  [ St_C_Wait($C, intended_infra, chan, ctx, pkE, cterm),
+    In(resp(pkE, cterm)) ]
+  --[ ClientAcceptsIntendedInfrastructure($C, intended_infra, chan, ctx, pkE) ]->
+  [ ]
+
+lemma received_infrastructure_attestation_has_valid_measurement_origin:
+  "All C I chan ctx pkE #i.
+    ClientReceivesInfrastructureAttestation(C, I, chan, ctx, pkE) @ i
+    ==>
+      (Ex Infra #j.
+        InfrastructureIssuesAttestation(Infra, shared_measurement, ctx, pkE) @ j
+        & j < i)"
+
+lemma diversion_can_fail_with_same_measurement:
+  exists-trace
+  "Ex C ctx pkE #i #j #k.
+    ClientTargetsInfrastructure(C, intended_infra, c_chan, ctx) @ i
+    & OtherInfrastructureResponded(other_infra, c_chan, pkE) @ j
+    & ClientAcceptsIntendedInfrastructure(C, intended_infra, c_chan, ctx, pkE) @ k
+    & not(Ex #l.
+        IntendedInfrastructureResponded(intended_infra, c_chan, pkE) @ l)"
+
+end

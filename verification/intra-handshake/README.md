@@ -1,6 +1,6 @@
 # Intra-Handshake Artifacts
 
-This directory contains the legacy pre-handshake / intra-handshake models.
+This directory contains the legacy intra-handshake models.
 
 In this generation, attestation is modeled as part of the TLS handshake rather
 than as a post-handshake exported-authenticator exchange.
@@ -19,7 +19,11 @@ ProVerif:
   checks legacy request/report binding
 - `proverif/cocos_legacy_relay_attack.pv`
   checks the legacy-side relay / same-endpoint comparison under the same
-  leakage-style abstraction used for comparison with the post-handshake models
+  reduced A1 leakage-style abstraction used for comparison with the
+  post-handshake models
+
+These legacy models are retained as compact comparison material. They are not
+the main subject of the report.
 
 ## Run
 

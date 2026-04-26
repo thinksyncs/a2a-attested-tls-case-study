@@ -2,7 +2,7 @@
    post-handshake Cocos AI aTLS verifier.
 
    Goal:
-   - Check whether client acceptance implies use of the expected/default Cocos
+   - Check whether client acceptance implies use of the expected Cocos
      attestation exporter label.
 
    Scope:
